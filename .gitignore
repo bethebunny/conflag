@@ -1,0 +1,4 @@
+.py[oc]
+.o
+build/
+parsetab.py

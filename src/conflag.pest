@@ -1,0 +1,61 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+object = {
+    "{" ~ "}" |
+    "{" ~ pair ~ ("," ~ pair)* ~ ","? ~ "}"
+}
+pair = { name ~ ":" ~ expression | string ~ ":" ~ expression }
+
+array = {
+    "[" ~ "]" |
+    "[" ~ expression ~ ("," ~ expression)* ~ ","? ~ "]"
+}
+
+expression = _{
+    plus
+    | lambda
+    | atom
+    | "(" ~ expression ~ ")"
+}
+
+primitive = _{ object | array | string | number | boolean | null }
+
+atom = { (patch_map | patch | name | primitive | "(" ~ expression ~ ")") ~ (atom_attribute | atom_function_call )* }
+atom_attribute = {"." ~ name}
+atom_function_call = {"(" ~ expression_list ~ ")"}
+
+patch = { "&" ~ atom }
+patch_map = { "&&" ~ atom }
+
+lambda = { "(" ~ arg_list ~ ")" ~ "=>" ~ expression }
+arg_list = { (name ~ ",")* ~ (name ~ ","?)? }
+
+/// function_call = { left_recursive_value ~ "(" ~ expression_list ~ ")" }
+expression_list = { expression ~ ("," ~ expression)* ~ ","? }
+
+/// attribute = { left_recursive_value ~ ("." ~ name)+ }
+plus = { atom ~ ("+" ~ atom)+ }
+
+name = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+
+boolean = { "true" | "false" }
+
+null = { "null" }
+
+string = @{ "\"" ~ string_inner ~ "\"" }
+string_inner = ${ char* }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+number = @{
+    "-"?
+    ~ ("0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*)
+    ~ ("." ~ ASCII_DIGIT*)?
+    ~ (^"e" ~ ("+" | "-")? ~ ASCII_DIGIT+)?
+}
+
+/// TODO: allow naked pairs in file
+file = _{ SOI ~ expression ~ EOI }

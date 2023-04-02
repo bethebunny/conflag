@@ -5,8 +5,6 @@ use conflag;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    println!("size_of(Value): {}", std::mem::size_of::<conflag::Value>());
-    println!("size_of(Thunk): {}", std::mem::size_of::<conflag::Thunk>());
     if let [_, files @ ..] = &args[..] {
         for file in files {
             println!("\n\nParsing {}", file);
@@ -21,9 +19,10 @@ fn main() {
                 }
             };
             // println!("Value: {:?}", value);
-            match value {
+            match &*value {
                 conflag::Value::Object(scope) => {
-                    let v = scope.thunk(conflag::Value::Name("eval".into())).evaluate();
+                    let v = scope.get(&"eval".into()).unwrap().evaluate();
+                    // let v = scope.thunk(conflag::Value::Name("eval".into())).evaluate();
                     println!("evaluating: eval = {:?}", v);
                 }
                 _ => (),

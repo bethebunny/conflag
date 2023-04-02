@@ -9,19 +9,6 @@ use std::rc::Rc;
 
 use pest::Parser;
 
-#[derive(Parser)]
-#[grammar = "conflag.pest"]
-struct ConflagParser;
-
-#[derive(Clone)]
-pub struct ScopePtr(Rc<RefCell<Scope>>);
-
-#[derive(Debug, Clone)]
-pub struct Scope {
-    values: HashMap<String, Thunk>,
-    parent: Option<ScopePtr>,
-}
-
 // TODO
 // - get compiling again
 // - comments
@@ -39,10 +26,23 @@ pub struct Scope {
 // - arrays as linked lists
 //   - List: (Thunk, Option<List>)
 //   - allow infinite streams
+// - derive(FromConfig)
+
+#[derive(Parser)]
+#[grammar = "conflag.pest"]
+struct ConflagParser;
+
+#[derive(Clone)]
+pub struct ScopePtr(Rc<RefCell<Scope>>);
+
+#[derive(Debug, Clone)]
+pub struct Scope {
+    values: HashMap<String, Thunk>,
+    parent: Option<ScopePtr>,
+}
 
 impl fmt::Debug for ScopePtr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // write!(f, "ScopePtr({:p})", self.0)
         write!(f, "ScopePtr({:?})", self.borrow().values.keys())
     }
 }
@@ -61,6 +61,22 @@ impl ScopePtr {
 
     fn borrow<'a>(&'a self) -> Ref<'a, Scope> {
         self.0.borrow()
+    }
+
+    pub fn get(&self, name: &String) -> Option<Thunk> {
+        self.borrow().values.get(name).cloned()
+    }
+
+    fn sub_scope(&self, values: HashMap<String, Thunk>) -> ScopePtr {
+        ScopePtr::from_values(values, Some(self.clone()))
+    }
+
+    fn name_lookup(&self, name: &String) -> Option<Thunk> {
+        match (self.get(name), &self.borrow().parent) {
+            (Some(v), _) => Some(v),
+            (None, Some(parent)) => parent.name_lookup(name),
+            _ => None,
+        }
     }
 }
 
@@ -85,14 +101,14 @@ pub enum Value {
     Lambda {
         scope: ScopePtr,
         arg_names: Vec<String>,
-        expr: Rc<Value>,
+        expr: Rc<AstNode>,
     },
     BinOp {
         kind: BinOp,
         left: Thunk,
         right: Thunk,
     },
-    Name(String),
+    Name(ScopePtr, String),
     Attribute {
         value: Thunk,
         attr: String,
@@ -100,21 +116,40 @@ pub enum Value {
     Null,
 }
 
+#[derive(Debug, Clone)]
+pub enum AstNode {
+    Object(HashMap<String, AstNode>),
+    Patch(Box<AstNode>),
+    Array(Vec<AstNode>),
+    Number(f64),
+    Boolean(bool),
+    Null,
+    String(String),
+    Name(String),
+    Attribute {
+        value: Box<AstNode>,
+        attr: String,
+    },
+    FunctionCall {
+        f: Box<AstNode>,
+        args: Vec<AstNode>,
+    },
+    Lambda {
+        arg_names: Vec<String>,
+        expr: Rc<AstNode>,
+    },
+    BinOp {
+        kind: BinOp,
+        left: Box<AstNode>,
+        right: Box<AstNode>,
+    },
+}
+
 #[derive(Clone)]
 pub struct Thunk {
-    scope: ScopePtr,
     value: Rc<Value>,
     evaluated: Rc<RefCell<Option<Result<Rc<Value>, Error>>>>,
 }
-
-// impl From<Value> for Thunk {
-//     fn from(v: Value) -> Self {
-//         Thunk {
-//             value: Rc::new(v),
-//             evaluated: RefCell::new(None),
-//         }
-//     }
-// }
 
 impl fmt::Debug for Thunk {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -126,22 +161,30 @@ impl fmt::Debug for Thunk {
 }
 
 impl Thunk {
-    fn clone_with_parent_scope(&self, parent: &ScopePtr) -> Thunk {
-        println!("THUNK CWPS: {:?}", self);
-        Thunk {
-            scope: parent.clone(),
-            // TODO: can _maybe_ get rid of the parent pointers now?
-            value: Rc::new(self.value.clone_with_parent_scope(parent)),
-            evaluated: Rc::new(RefCell::new(None)),
-        }
-    }
-
     pub fn evaluate(&self) -> Result<Rc<Value>, Error> {
         if self.evaluated.borrow().is_none() {
-            let result = self.scope.evaluate(self);
+            let result = self.value.evaluate();
             *self.evaluated.borrow_mut() = Some(result);
         }
         self.evaluated.borrow().clone().unwrap()
+    }
+}
+
+impl From<Value> for Thunk {
+    fn from(v: Value) -> Self {
+        Thunk {
+            value: Rc::new(v),
+            evaluated: Rc::new(RefCell::new(None)),
+        }
+    }
+}
+
+impl From<Rc<Value>> for Thunk {
+    fn from(v: Rc<Value>) -> Self {
+        Thunk {
+            value: v,
+            evaluated: Rc::new(RefCell::new(None)),
+        }
     }
 }
 
@@ -163,10 +206,10 @@ impl From<pest::error::Error<Rule>> for Error {
 
 use pest::iterators::Pair;
 
-type _BuiltinFn = fn(&ScopePtr, &Vec<Thunk>) -> Result<Rc<Value>, Error>;
+type _BuiltinFn = fn(&Vec<Thunk>) -> Result<Rc<Value>, Error>;
 
 #[derive(Clone)]
-pub struct BuiltinFn(String, _BuiltinFn);
+pub struct BuiltinFn(pub String, pub _BuiltinFn);
 
 impl fmt::Debug for BuiltinFn {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -174,7 +217,7 @@ impl fmt::Debug for BuiltinFn {
     }
 }
 
-fn builtin_bool(_scope: &ScopePtr, args: &Vec<Thunk>) -> Result<Rc<Value>, Error> {
+fn builtin_bool(args: &Vec<Thunk>) -> Result<Rc<Value>, Error> {
     if args.len() != 1 {
         Err(Error::BadFunctionCall)?;
     }
@@ -192,11 +235,11 @@ fn builtin_bool(_scope: &ScopePtr, args: &Vec<Thunk>) -> Result<Rc<Value>, Error
     )))
 }
 
-fn builtin_if(scope: &ScopePtr, args: &Vec<Thunk>) -> Result<Rc<Value>, Error> {
+fn builtin_if(args: &Vec<Thunk>) -> Result<Rc<Value>, Error> {
     if let [pred, true_value, false_value] = &args[..] {
         // TODO: I think this is a bug, I don't want to clone a Thunk like this
         let bool_args = vec![pred.clone()];
-        let pred = builtin_bool(scope, &bool_args)?;
+        let pred = builtin_bool(&bool_args)?;
         match *pred {
             Value::Boolean(true) => true_value.evaluate(),
             Value::Boolean(false) => false_value.evaluate(),
@@ -207,19 +250,19 @@ fn builtin_if(scope: &ScopePtr, args: &Vec<Thunk>) -> Result<Rc<Value>, Error> {
     }
 }
 
-fn builtin_map(scope: &ScopePtr, args: &Vec<Thunk>) -> Result<Rc<Value>, Error> {
+fn builtin_map(args: &Vec<Thunk>) -> Result<Rc<Value>, Error> {
     if let [f, array] = &args[..] {
         match &*array.evaluate()? {
             // TODO: Hmm I want to return an un-evaluated array here; will that be a problem?
             //       _I think_ my execution model makes the assumption that .evaluate() is "final" right now.
             Value::Array(values) => {
-                let mapped = values
-                    .iter()
-                    .map(|v| Value::FunctionCall {
+                let mapped = values.iter().map(|v| {
+                    Value::FunctionCall {
                         f: f.clone(),
                         args: vec![v.clone()],
-                    })
-                    .map(|v| scope.thunk(v));
+                    }
+                    .into()
+                });
                 Ok(Rc::new(Value::Array(mapped.collect())))
             }
             Value::Object(scope) => {
@@ -230,10 +273,11 @@ fn builtin_map(scope: &ScopePtr, args: &Vec<Thunk>) -> Result<Rc<Value>, Error> 
                     .map(|(k, v)| {
                         (
                             k.clone(),
-                            scope.thunk(Value::FunctionCall {
+                            Value::FunctionCall {
                                 f: f.clone(),
                                 args: vec![v.clone()],
-                            }),
+                            }
+                            .into(),
                         )
                     })
                     .collect();
@@ -258,61 +302,32 @@ fn builtins() -> ScopePtr {
     let values = HashMap::from(builtins.map(|(name, f)| {
         (
             name.into(),
-            ScopePtr::new(None).thunk(Value::BuiltinFn(BuiltinFn(name.into(), f))),
+            Value::BuiltinFn(BuiltinFn(name.into(), f)).into(),
         )
     }));
     ScopePtr::from_values(values, None)
 }
 
 fn patch(left: &Thunk, right: &Thunk) -> Result<Thunk, Error> {
-    Ok(
-        ScopePtr::new(None).thunk(match (&*left.evaluate()?, &*right.evaluate()?) {
-            (_, Value::Lambda { .. } | Value::BuiltinFn(..)) => Value::FunctionCall {
-                f: right.clone(),
-                args: vec![left.clone()],
-            },
-            (_, Value::Object(..)) => Value::BinOp {
-                kind: BinOp::Plus,
-                left: left.clone(),
-                right: right.clone(),
-            },
-            (Value::Patch(l), _) => Value::Patch(patch(l, right)?),
-            (l, r) => Err(Error::UnsupportedOperation(
-                BinOp::Plus,
-                Rc::new(l.clone()),
-                Rc::new(r.clone()),
-            ))?,
-        }),
-    )
+    Ok(match (&*left.evaluate()?, &*right.evaluate()?) {
+        (_, Value::Lambda { .. } | Value::BuiltinFn(..)) => Value::FunctionCall {
+            f: right.clone(),
+            args: vec![left.clone()],
+        },
+        (_, Value::Object(..)) => Value::BinOp {
+            kind: BinOp::Plus,
+            left: left.clone(),
+            right: right.clone(),
+        },
+        (Value::Patch(l), _) => Value::Patch(patch(l, right)?),
+        (l, r) => Err(Error::UnsupportedOperation(
+            BinOp::Plus,
+            Rc::new(l.clone()),
+            Rc::new(r.clone()),
+        ))?,
+    }
+    .into())
 }
-
-// fn splat_patch(left: &Thunk, right: &Thunk) -> Result<Thunk, Error> {
-//     Ok(ScopePtr::new(None).thunk(match &*left.evaluate()? {
-//         Value::Array(values) => {
-//             let values: Result<Vec<Thunk>, Error> =
-//                 values.iter().map(|v| patch(v, right)).collect();
-//             Value::Array(values?)
-//         }
-//         Value::Object(scope) => {
-//             let values: Result<HashMap<String, Thunk>, Error> = scope
-//                 .borrow()
-//                 .values
-//                 .iter()
-//                 .map(|(k, v)| patch(v, right).and_then(|v| Ok((k.clone(), v))))
-//                 .collect();
-//             Value::Object(ScopePtr::from_values(
-//                 values?,
-//                 scope.borrow().parent.clone(),
-//             ))
-//         }
-//         Value::Patch(l) => Value::Patch(splat_patch(l, right)?),
-//         _ => Err(Error::UnsupportedOperation(
-//             BinOp::Plus,
-//             left.value.clone(),
-//             right.value.clone(),
-//         ))?,
-//     }))
-// }
 
 fn parse_name_or_string(pair: Pair<Rule>) -> String {
     match pair.as_rule() {
@@ -324,78 +339,82 @@ fn parse_name_or_string(pair: Pair<Rule>) -> String {
     .into()
 }
 
-impl ScopePtr {
-    pub fn get(&self, name: &String) -> Option<Thunk> {
-        self.borrow().values.get(name).cloned()
-    }
-
-    fn sub_scope(&self, values: HashMap<String, Thunk>) -> ScopePtr {
-        ScopePtr::from_values(values, Some(self.clone()))
-    }
-
-    pub fn thunk(&self, value: Value) -> Thunk {
-        Thunk {
-            scope: self.clone(),
-            value: Rc::new(value),
-            evaluated: Rc::new(RefCell::new(None)),
+impl AstNode {
+    fn value(&self, scope: &ScopePtr) -> Value {
+        match self {
+            AstNode::Object(values) => {
+                let new_scope = ScopePtr::new(Some(scope.clone()));
+                let values = values
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone().value(&new_scope).into()))
+                    .collect();
+                (*new_scope.0.borrow_mut()).values = values;
+                Value::Object(new_scope)
+            }
+            AstNode::Array(values) => {
+                let values = values
+                    .iter()
+                    .map(|v| v.clone().value(scope).into())
+                    .collect();
+                Value::Array(values)
+            }
+            AstNode::Number(n) => Value::Number(*n),
+            AstNode::Boolean(b) => Value::Boolean(*b),
+            AstNode::String(s) => Value::String(s.clone()),
+            AstNode::Null => Value::Null,
+            AstNode::Name(name) => Value::Name(scope.clone(), name.clone()),
+            AstNode::Patch(v) => Value::Patch(v.value(scope).into()),
+            AstNode::Lambda { arg_names, expr } => Value::Lambda {
+                scope: scope.clone(),
+                arg_names: arg_names.clone(),
+                expr: expr.clone(),
+            },
+            AstNode::FunctionCall { f, args } => Value::FunctionCall {
+                f: f.value(scope).into(),
+                args: args.iter().map(|v| v.clone().value(scope).into()).collect(),
+            },
+            AstNode::BinOp { kind, left, right } => Value::BinOp {
+                kind: *kind,
+                left: left.value(scope).into(),
+                right: right.value(scope).into(),
+            },
+            AstNode::Attribute { value, attr } => Value::Attribute {
+                value: value.value(scope).into(),
+                attr: attr.clone(),
+            },
         }
     }
+}
 
-    fn name_lookup(&self, name: &String) -> Option<Thunk> {
-        match (self.get(name), &self.borrow().parent) {
-            (Some(v), _) => Some(v),
-            (None, Some(parent)) => parent.name_lookup(name),
-            _ => None,
-        }
-    }
-
-    fn clone_with_parent_scope(&self, parent: &ScopePtr) -> ScopePtr {
-        println!("SCOPE CWPS: {:?}", self);
-        let new_scope = ScopePtr::new(Some(parent.clone()));
-        let values: HashMap<String, Thunk> = self
-            .borrow()
-            .values
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone_with_parent_scope(&new_scope)))
-            .collect();
-        new_scope.0.borrow_mut().values = values;
-        new_scope
-    }
-
-    pub fn evaluate(&self, thunk: &Thunk) -> Result<Rc<Value>, Error> {
-        println!("EVALUATE:\n\tvalue: {:?}\n\tscope: {:?}", thunk.value, self);
-        match &*thunk.value {
+impl Value {
+    pub fn evaluate(self: &Rc<Self>) -> Result<Rc<Value>, Error> {
+        // println!("EVALUATE:\n\tvalue: {:?}", self);
+        match &**self {
             Value::Object(..)
+            | Value::Array(..)
             | Value::Patch(..)
             | Value::Number(..)
             | Value::String(..)
             | Value::Boolean(..)
             | Value::Null
             | Value::Lambda { .. }
-            | Value::BuiltinFn(..) => Ok(thunk.value.clone()),
-            Value::Name(name) => {
-                let v = self
+            | Value::BuiltinFn(..) => Ok(self.clone()),
+            Value::Name(scope, name) => {
+                let v = scope
                     .name_lookup(&name)
-                    .ok_or_else(|| Error::NameResolutionError(self.clone(), name.clone()))?;
+                    .ok_or_else(|| Error::NameResolutionError(scope.clone(), name.clone()))?;
                 v.evaluate()
             }
             Value::Attribute { value, attr } => match &*value.evaluate()? {
-                Value::Object(scope) => scope.evaluate(
-                    &scope
-                        .get(&attr)
-                        .ok_or_else(|| Error::NoSuchAttribute(scope.clone(), attr.clone()))?,
-                ),
+                Value::Object(scope) => scope
+                    .get(&attr)
+                    .ok_or_else(|| Error::NoSuchAttribute(scope.clone(), attr.clone()))?
+                    .evaluate(),
                 _ => Err(Error::AttributeAccessOnBadType(
                     value.value.clone(),
                     attr.clone(),
                 ))?,
             },
-            Value::Array(values) => {
-                for v in values.iter() {
-                    v.evaluate()?;
-                }
-                Ok(thunk.value.clone())
-            }
             // TODO: I think there's some funkiness with function scope here.
             // We want the function's scope to be its lexical scope, no matter how
             // we get a reference to it.
@@ -412,9 +431,9 @@ impl ScopePtr {
                             .zip(args.iter().cloned())
                             .collect(),
                     );
-                    scope.thunk(expr.clone_with_parent_scope(&scope)).evaluate()
+                    Rc::new(expr.value(&scope)).evaluate()
                 }
-                Value::BuiltinFn(BuiltinFn(_, f)) => f(self, &args),
+                Value::BuiltinFn(BuiltinFn(_, f)) => f(&args),
                 _ => Err(Error::BadFunctionCall),
             },
             Value::BinOp { kind, left, right } => {
@@ -433,11 +452,10 @@ impl ScopePtr {
                                 a.append(&mut r.clone());
                                 a
                             }),
-                            (_, Value::Patch(right)) => return patch(left, right)?.evaluate(),
+                            (_, Value::Patch(right)) => return patch(&left, right)?.evaluate(),
                             (Value::Object(s1), Value::Object(s2)) => {
                                 // TODO: what parent to keep here now?
                                 // I think the answer is that objects being scopes is outdated.
-                                // Thunks have scopes which have parents, but objects/patches shouldn't.
                                 let mut values = s1.borrow().values.clone();
                                 for (k, v) in s2.borrow().values.iter() {
                                     match &*v.evaluate()? {
@@ -445,11 +463,12 @@ impl ScopePtr {
                                             let entry = values.entry(k.clone());
                                             entry
                                                 .and_modify(|lv| {
-                                                    *lv = v.scope.thunk(Value::BinOp {
+                                                    *lv = Value::BinOp {
                                                         kind: BinOp::Plus,
                                                         left: lv.clone(),
                                                         right: v.clone(),
-                                                    });
+                                                    }
+                                                    .into();
                                                 })
                                                 .or_insert(v.clone());
                                         }
@@ -463,105 +482,16 @@ impl ScopePtr {
                                     s1.borrow().parent.clone(),
                                 ))
                             }
-                            // (
-                            //     Value::Object(s1) | Value::Patch(s1),
-                            //     Value::Object(s2) | Value::Patch(s2),
-                            // ) => {
-                            //     // TODO: what parent to keep here now?
-                            //     // I think the answer is that objects being scopes is outdated.
-                            //     // Thunks have scopes which have parents, but objects/patches shouldn't.
-                            //     let mut scope = s1.borrow().clone();
-                            //     for (k, v) in s2.borrow().values.iter() {
-                            //         match &*v.evaluate()? {
-                            //             Value::Patch(..) => {
-                            //                 let entry = scope.values.entry(k.clone());
-                            //                 entry
-                            //                     .and_modify(|lv| {
-                            //                         *lv = v.scope.thunk(Value::BinOp {
-                            //                             kind: BinOp::Plus,
-                            //                             left: lv.clone(),
-                            //                             right: v.clone(),
-                            //                         });
-                            //                     })
-                            //                     .or_insert(v.clone());
-                            //             }
-                            //             _ => {
-                            //                 scope.values.insert(k.clone(), v.clone());
-                            //             }
-                            //         }
-                            //     }
-                            //     match &*left {
-                            //         Value::Object(..) => {
-                            //             Value::Object(ScopePtr(Rc::new(RefCell::new(scope))))
-                            //         }
-                            //         Value::Patch(..) => {
-                            //             Value::Patch(ScopePtr(Rc::new(RefCell::new(scope))))
-                            //         }
-                            //         _ => unreachable!(),
-                            //     }
-                            // }
                             _ => Err(Error::UnsupportedOperation(*kind, lv.clone(), rv.clone()))?,
                         }
                     }
-                    _ => todo!(),
                 }))
             }
         }
     }
 }
 
-impl Value {
-    fn clone_with_parent_scope(&self, parent: &ScopePtr) -> Value {
-        println!("VALUE CWPS: {:?}", self);
-        match self {
-            Value::Object(scope) => Value::Object(scope.clone_with_parent_scope(parent)),
-            Value::Patch(value) => Value::Patch(value.clone_with_parent_scope(parent)),
-            Value::Array(values) => Value::Array(
-                values
-                    .iter()
-                    .map(|v| v.clone_with_parent_scope(parent))
-                    .collect(),
-            ),
-            Value::BinOp { kind, left, right } => Value::BinOp {
-                kind: *kind,
-                left: left.clone_with_parent_scope(parent),
-                right: right.clone_with_parent_scope(parent),
-            },
-            Value::Attribute { value, attr } => Value::Attribute {
-                value: value.clone_with_parent_scope(parent),
-                attr: attr.clone(),
-            },
-            Value::Lambda {
-                scope,
-                arg_names,
-                expr,
-            } => {
-                let scope = scope.clone_with_parent_scope(parent);
-                let expr = Rc::new(expr.clone_with_parent_scope(&scope));
-                Value::Lambda {
-                    scope,
-                    arg_names: arg_names.clone(),
-                    expr,
-                }
-            }
-            Value::FunctionCall { f, args } => Value::FunctionCall {
-                f: f.clone_with_parent_scope(parent),
-                args: args
-                    .iter()
-                    .map(|v| v.clone_with_parent_scope(parent))
-                    .collect(),
-            },
-            Value::Boolean(..)
-            | Value::String(..)
-            | Value::Number(..)
-            | Value::Name(..)
-            | Value::BuiltinFn(..)
-            | Value::Null => self.clone(),
-        }
-    }
-}
-
-fn parse_value(pair: Pair<Rule>, scope: &ScopePtr) -> Value {
+fn parse_value(pair: Pair<Rule>) -> Result<AstNode, Error> {
     // println!(
     //     "PARSING RULE {:?} ({}) IN SCOPE {:?}",
     //     pair.as_rule(),
@@ -569,54 +499,52 @@ fn parse_value(pair: Pair<Rule>, scope: &ScopePtr) -> Value {
     //     &scope
     // );
     let rule = pair.as_rule();
-    match rule {
+    let node = match rule {
         Rule::object => {
-            let scope = ScopePtr::new(Some(scope.clone()));
-            let pairs = pair.into_inner().map(|pair| {
-                let mut inner_rules = pair.into_inner();
-                let name = parse_name_or_string(inner_rules.next().unwrap());
-                let value = parse_value(inner_rules.next().unwrap(), &scope);
-                (name, scope.thunk(value))
-            });
-            scope.0.borrow_mut().values = pairs.collect();
-            Value::Object(scope)
+            let pairs: Result<HashMap<String, AstNode>, Error> = pair
+                .into_inner()
+                .map(|pair| {
+                    let mut inner_rules = pair.into_inner();
+                    let name = parse_name_or_string(inner_rules.next().unwrap());
+                    let value = parse_value(inner_rules.next().unwrap());
+                    value.and_then(|v| Ok((name, v)))
+                })
+                .collect();
+            AstNode::Object(pairs?)
         }
-        Rule::array => Value::Array(
-            pair.into_inner()
-                .map(|p| parse_value(p, scope))
-                .map(|v| scope.thunk(v))
-                .collect(),
-        ),
-        Rule::string => Value::String(String::from(pair.into_inner().next().unwrap().as_str())),
-        Rule::number => Value::Number(pair.as_str().parse().unwrap()),
-        Rule::boolean => Value::Boolean(pair.as_str().parse().unwrap()),
-        Rule::null => Value::Null,
+        Rule::array => {
+            let values: Result<Vec<AstNode>, Error> = pair.into_inner().map(parse_value).collect();
+            AstNode::Array(values?)
+        }
+        Rule::string => AstNode::String(String::from(pair.into_inner().next().unwrap().as_str())),
+        Rule::number => AstNode::Number(pair.as_str().parse().unwrap()),
+        Rule::boolean => AstNode::Boolean(pair.as_str().parse().unwrap()),
+        Rule::null => AstNode::Null,
         Rule::lambda => {
             let mut inner_rules = pair.into_inner();
             let arg_list = inner_rules.next().unwrap();
             let arg_names: Vec<String> = arg_list.into_inner().map(parse_name_or_string).collect();
-            let expr = parse_value(inner_rules.next().unwrap(), scope);
+            let expr = parse_value(inner_rules.next().unwrap())?;
             // Idea:
             //  - create a scope whose parent scope is the lexical scope of the function definition
             //  - when we call the function
             //    1 create a new scope whose parent scope is the function's lexical scope and contains argument values
             //    2 clone the expression tree, but replace parent pointers to point to this new scope
             //    3 evaluate the expression in this new scope
-            Value::Lambda {
-                scope: scope.sub_scope(HashMap::new()),
+            AstNode::Lambda {
                 arg_names,
                 expr: Rc::new(expr),
             }
         }
         Rule::atom => {
             let mut inner_rules = pair.into_inner();
-            let mut value = parse_value(inner_rules.next().unwrap(), scope);
+            let mut value = parse_value(inner_rules.next().unwrap())?;
             for pair in inner_rules {
                 match pair.as_rule() {
                     Rule::atom_attribute => {
                         let attr = parse_name_or_string(pair.into_inner().next().unwrap());
-                        value = Value::Attribute {
-                            value: scope.thunk(value),
+                        value = AstNode::Attribute {
+                            value: Box::new(value),
                             attr,
                         };
                     }
@@ -627,14 +555,11 @@ fn parse_value(pair: Pair<Rule>, scope: &ScopePtr) -> Value {
                         // and automatically returns an error result if there's a different number of tokens
                         let mut inner_rules = pair.into_inner();
                         let expression_list = inner_rules.next().unwrap();
-                        let args: Vec<Thunk> = expression_list
-                            .into_inner()
-                            .map(|p| parse_value(p, scope))
-                            .map(|v| scope.thunk(v))
-                            .collect();
-                        value = Value::FunctionCall {
-                            f: scope.thunk(value),
-                            args,
+                        let args: Result<Vec<AstNode>, Error> =
+                            expression_list.into_inner().map(parse_value).collect();
+                        value = AstNode::FunctionCall {
+                            f: Box::new(value),
+                            args: args?,
                         }
                     }
                     _ => unreachable!(),
@@ -642,47 +567,41 @@ fn parse_value(pair: Pair<Rule>, scope: &ScopePtr) -> Value {
             }
             value
         }
-        Rule::name => Value::Name(parse_name_or_string(pair)),
+        Rule::name => AstNode::Name(parse_name_or_string(pair)),
         Rule::plus => {
             let mut inner_rules = pair.into_inner();
-            let left = parse_value(inner_rules.next().unwrap(), scope);
-            let right = parse_value(inner_rules.next().unwrap(), scope);
-            Value::BinOp {
+            let left = parse_value(inner_rules.next().unwrap())?;
+            let right = parse_value(inner_rules.next().unwrap())?;
+            AstNode::BinOp {
                 kind: BinOp::Plus,
-                left: scope.thunk(left),
-                right: scope.thunk(right),
+                left: Box::new(left),
+                right: Box::new(right),
             }
         }
-        Rule::patch => {
-            Value::Patch(scope.thunk(parse_value(pair.into_inner().next().unwrap(), scope)))
-        }
+        Rule::patch => AstNode::Patch(Box::new(parse_value(pair.into_inner().next().unwrap())?)),
         Rule::patch_map => {
             // This is horrible :P Basically we're writing a macro here to replace
             // &&x -> &((a) => map((v) => v + &x, a))
-            let inner = scope.thunk(parse_value(pair.into_inner().next().unwrap(), scope));
-            // TODO: yuck, this and all the CWPS calls are a good indication we're
-            // doing something silly
-            let new_scope = ScopePtr::new(None);
-            let map = Value::Lambda {
-                scope: new_scope.clone(),
+            let inner = parse_value(pair.into_inner().next().unwrap())?;
+            let map = AstNode::Lambda {
                 arg_names: vec!["a".into()],
-                expr: Rc::new(Value::FunctionCall {
-                    f: new_scope.thunk(Value::BuiltinFn(BuiltinFn("map".into(), builtin_map))),
+                expr: Rc::new(AstNode::FunctionCall {
+                    // TODO: we want this to always be builtin map, it shouldn't be possible to scope-shadow it
+                    f: Box::new(AstNode::Name("map".into())),
                     args: vec![
-                        new_scope.thunk(Value::Lambda {
-                            scope: new_scope.clone(),
+                        AstNode::Lambda {
                             arg_names: vec!["v".into()],
-                            expr: Rc::new(Value::BinOp {
+                            expr: Rc::new(AstNode::BinOp {
                                 kind: BinOp::Plus,
-                                left: new_scope.thunk(Value::Name("v".into())),
-                                right: new_scope.thunk(Value::Patch(inner)),
+                                left: Box::new(AstNode::Name("v".into())),
+                                right: Box::new(AstNode::Patch(Box::new(inner))),
                             }),
-                        }),
-                        new_scope.thunk(Value::Name("a".into())),
+                        },
+                        AstNode::Name("a".into()),
                     ],
                 }),
             };
-            Value::Patch(new_scope.thunk(map))
+            AstNode::Patch(Box::new(map))
         }
         // TODO
         Rule::file
@@ -697,11 +616,12 @@ fn parse_value(pair: Pair<Rule>, scope: &ScopePtr) -> Value {
         | Rule::expression
         | Rule::expression_list
         | Rule::WHITESPACE => unreachable!(),
-    }
+    };
+    Ok(node)
 }
 
-pub fn parse(contents: &str) -> Result<Value, Error> {
+pub fn parse(contents: &str) -> Result<Rc<Value>, Error> {
     let mut pairs = ConflagParser::parse(Rule::file, contents)?;
-    let value = parse_value(pairs.next().unwrap(), &builtins());
-    Ok(value)
+    let ast = parse_value(pairs.next().unwrap())?;
+    Thunk::from(ast.value(&builtins())).evaluate()
 }

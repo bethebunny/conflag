@@ -7,7 +7,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     if let [_, files @ ..] = &args[..] {
         for file in files {
-            println!("\n\nParsing {}", file);
+            // println!("\n\nParsing {}", file);
             let contents = fs::read_to_string(file).unwrap();
             let value = match conflag::parse(&contents) {
                 Ok(value) => value,
@@ -19,7 +19,8 @@ fn main() {
                 }
             };
             // println!("Value: {:?}", value);
-            println!("evaluating: eval = {:?}", value.attr("eval"));
+            // println!("evaluating: eval = {:?}", value.attr("eval"));
+            println!("{}", value);
         }
     }
 }

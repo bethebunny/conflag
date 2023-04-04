@@ -1,7 +1,7 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::{collections::HashMap, fs};
 
-use crate::{scope::ScopePtr, thunk::Thunk, value::Value, Error};
+use crate::{ast::AstNode, scope::ScopePtr, thunk::Thunk, value::Value, Error};
 
 type _BuiltinFn = fn(&Vec<Thunk>) -> Result<Thunk, Error>;
 
@@ -26,7 +26,7 @@ fn builtin_bool(args: &Vec<Thunk>) -> Result<Thunk, Error> {
     }
     let v = args.first().unwrap().evaluate();
     Ok(Value::Boolean(match &*v.clone()? {
-        Value::Object(scope) => scope.borrow().values.len() != 0,
+        Value::Object(scope) => scope.values().len() != 0,
         Value::Array(values) => values.len() != 0,
         Value::Number(num) => *num != 0.,
         Value::Boolean(val) => *val,
@@ -69,8 +69,7 @@ fn builtin_map(args: &Vec<Thunk>) -> Result<Thunk, Error> {
             }
             Value::Object(scope) => {
                 let mapped = scope
-                    .borrow()
-                    .values
+                    .values()
                     .iter()
                     .map(|(k, v)| {
                         (
@@ -92,11 +91,49 @@ fn builtin_map(args: &Vec<Thunk>) -> Result<Thunk, Error> {
     }
 }
 
+fn builtin_import(args: &Vec<Thunk>) -> Result<Thunk, Error> {
+    if let [target] = &args[..] {
+        match &*target.evaluate()? {
+            Value::String(path) => {
+                let contents = fs::read_to_string(path).or_else(|_| Err(Error::BadFunctionCall))?;
+                let node = AstNode::parse(contents.as_str())?;
+                Ok(node.value(&builtins()).into())
+            }
+            _ => Err(Error::BadFunctionCall),
+        }
+    } else {
+        Err(Error::BadFunctionCall)
+    }
+}
+
+fn builtin_reduce(args: &Vec<Thunk>) -> Result<Thunk, Error> {
+    if let [f, array, state] = &args[..] {
+        match &*array.evaluate()? {
+            Value::Array(values) => {
+                let mut state = state.clone();
+                for v in values.iter() {
+                    state = Value::FunctionCall {
+                        f: f.clone(),
+                        args: vec![state.clone(), v.clone()],
+                    }
+                    .into();
+                }
+                Ok(state)
+            }
+            _ => Err(Error::BadFunctionCall),
+        }
+    } else {
+        Err(Error::BadFunctionCall)
+    }
+}
+
 pub(crate) fn builtins() -> ScopePtr {
-    let builtins: [(&str, _BuiltinFn); 3] = [
+    let builtins: [(&str, _BuiltinFn); 5] = [
         ("if", builtin_if),
         ("bool", builtin_bool),
         ("map", builtin_map),
+        ("import", builtin_import),
+        ("reduce", builtin_reduce),
     ];
     let values =
         HashMap::from(builtins.map(|(name, f)| (name.into(), BuiltinFn(name.into(), f).into())));

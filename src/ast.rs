@@ -4,7 +4,12 @@ use std::{collections::HashMap, rc::Rc};
 
 use pest::{iterators::Pair, Parser};
 
-use crate::{binop::BinOp, scope::ScopePtr, value::Value, Error};
+use crate::{
+    binop::{BinOp, Comparison},
+    scope::ScopePtr,
+    value::Value,
+    Error,
+};
 
 #[derive(Parser)]
 #[grammar = "conflag.pest"]
@@ -48,12 +53,15 @@ impl AstNode {
     pub fn value(&self, scope: &ScopePtr) -> Value {
         match self {
             AstNode::Object(values) => {
-                let new_scope = ScopePtr::new(Some(scope.clone()));
+                let mut new_scope = ScopePtr::new(Some(scope.clone()));
                 let values = values
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone().value(&new_scope).into()))
                     .collect();
-                (*new_scope.borrow_mut()).values = values;
+                // Safety: This is the one place we set values on a scope.
+                // There very possibly _are_ other references to the pointer (eg. functions, names)
+                // but they are guaranteed to not be setting values also, since no other calls do.
+                unsafe { new_scope.set_values(values) };
                 Value::Object(new_scope)
             }
             AstNode::Array(values) => {
@@ -186,15 +194,32 @@ impl AstNode {
                 value
             }
             Rule::name => AstNode::Name(AstNode::parse_name_or_string(pair)),
-            Rule::plus => {
+            // TODO: operator precedence
+            Rule::binops => {
                 let mut inner_rules = pair.into_inner();
-                let left = AstNode::parse_value(inner_rules.next().unwrap())?;
-                let right = AstNode::parse_value(inner_rules.next().unwrap())?;
-                AstNode::BinOp {
-                    kind: BinOp::Plus,
-                    left: Box::new(left),
-                    right: Box::new(right),
+                let mut left_node = AstNode::parse_value(inner_rules.next().unwrap())?;
+                while let Some(binop) = inner_rules.next() {
+                    let kind = match binop.as_str() {
+                        "+" => BinOp::Plus,
+                        "-" => BinOp::Subtract,
+                        "*" => BinOp::Multiply,
+                        "/" => BinOp::Divide,
+                        "==" => BinOp::Compare(Comparison::Equal),
+                        "!=" => BinOp::Compare(Comparison::NotEqual),
+                        ">" => BinOp::Compare(Comparison::GreaterThan),
+                        ">=" => BinOp::Compare(Comparison::GreaterThanOrEqual),
+                        "<" => BinOp::Compare(Comparison::LessThan),
+                        "<=" => BinOp::Compare(Comparison::LessThanOrEqual),
+                        _ => unreachable!("Unexpected binop literal '{}'", binop.as_str()),
+                    };
+                    let right_node = AstNode::parse_value(inner_rules.next().unwrap())?;
+                    left_node = AstNode::BinOp {
+                        kind,
+                        left: Box::new(left_node),
+                        right: Box::new(right_node),
+                    };
                 }
+                left_node
             }
             Rule::patch => AstNode::Patch(Box::new(AstNode::parse_value(
                 pair.into_inner().next().unwrap(),
@@ -230,6 +255,7 @@ impl AstNode {
             | Rule::char
             | Rule::arg_list
             | Rule::primitive
+            | Rule::binop
             | Rule::atom_attribute
             | Rule::atom_function_call
             | Rule::expression

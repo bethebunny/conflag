@@ -13,7 +13,7 @@ array = {
 }
 
 expression = _{
-    plus
+    binops
     | lambda
     | atom
     | "(" ~ expression ~ ")"
@@ -32,7 +32,8 @@ patch_map = { "&&" ~ atom }
 lambda = { "(" ~ arg_list ~ ")" ~ "=>" ~ expression }
 arg_list = { (name ~ ",")* ~ (name ~ ","?)? }
 
-plus = { atom ~ ("+" ~ atom)+ }
+binops = { atom ~ (binop ~ atom)+ }
+binop = { "+" | "-" | "*" | "/" | ">" | "<" | ">=" | "<=" | "==" | "!=" }
 
 name = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 

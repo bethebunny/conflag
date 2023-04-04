@@ -1,3 +1,5 @@
+#![feature(get_mut_unchecked)]
+
 use std::rc::Rc;
 
 mod ast;
@@ -22,8 +24,9 @@ extern crate pest_derive;
 // - docs
 // - moar docs
 // - lots of tests
-// - builtins: import, reduce, equal
-// - multiplication
+// - binops: -, *, /
+// - binops: precedence
+// - better errors (stop just using BadFunctionCall everywhere lmao)
 // - array splats
 // - dict splats
 // - derive(FromConfig)

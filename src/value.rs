@@ -97,6 +97,41 @@ impl Value {
         }
     }
 
+    fn pretty_format_items(
+        &self,
+        items: Vec<String>,
+        indent: usize,
+        max_width: usize,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let total_length: usize = items.iter().map(|s| s.len()).sum();
+        let wraps = items.iter().any(|s| s.contains("\n"));
+        // `indent` is a proxy for the start of the current line (TODO)
+        // each value takes up its own length + 2 (for comma and space separation)
+        // and then 1 for the final closing character.
+        // Length calculations don't yet consider
+        // - terminal control codes (eg. colors)
+        // - unicode characters
+        let single_line_length = indent + total_length + 2 * items.len() + 1;
+        if !wraps && single_line_length < max_width {
+            write!(f, "{}", items.join(", "))?;
+        } else {
+            let indent = " ".repeat(indent);
+            for item in items {
+                if item.contains("\n") {
+                    for line in item.split("\n") {
+                        write!(f, "\n{indent}  {line}")?;
+                    }
+                } else {
+                    write!(f, "\n{indent}  {item}")?;
+                }
+                write!(f, ",")?;
+            }
+            write!(f, "\n{indent}")?;
+        }
+        Ok(())
+    }
+
     // TODO: wrapping for terminal width
     pub fn pretty_indented(
         &self,
@@ -127,62 +162,21 @@ impl Value {
                     .iter()
                     .map(|k| {
                         // TODO: what about keys with spaces?
-                        format!(
-                            "{k}: {}",
-                            match scope.get(k).unwrap().evaluate() {
-                                Ok(v) => format!("{}", v),
-                                Err(e) => format!("Error<{e:?}>"),
-                            }
-                        )
+                        format!("{k}: {}", scope.get(k).unwrap())
                     })
                     .collect::<Vec<_>>();
-                let total_length: usize = pair_strs.iter().map(|s| s.len()).sum();
-                let wraps = pair_strs.iter().any(|s| s.contains("\n"));
-                if !wraps && total_length + indent + 2 * (pair_strs.len() + 1) < max_width {
-                    write!(f, "{{{}}}", pair_strs.join(", "))?;
-                } else {
-                    let indent = " ".repeat(indent);
-                    write!(f, "{{")?;
-                    for pair in pair_strs {
-                        if pair.contains("\n") {
-                            for line in pair.split("\n") {
-                                write!(f, "\n{indent}  {line}")?;
-                            }
-                        } else {
-                            write!(f, "\n{indent}  {pair}")?;
-                        }
-                    }
-                    write!(f, "\n{indent}}}")?;
-                }
-                Ok(())
+                write!(f, "{{")?;
+                self.pretty_format_items(pair_strs, indent, max_width, f)?;
+                write!(f, "}}")
             }
             Value::Array(values) => {
                 let strs = values
                     .iter()
-                    .map(|thunk| match thunk.evaluate() {
-                        Ok(v) => format!("{}", v),
-                        Err(e) => format!("Error<{e:?}>"),
-                    })
+                    .map(|thunk| format!("{thunk}"))
                     .collect::<Vec<_>>();
-                let total_length: usize = strs.iter().map(|s| s.len()).sum();
-                let wraps = strs.iter().any(|s| s.contains("\n"));
-                if !wraps && total_length + indent + 2 * (strs.len() + 1) < max_width {
-                    write!(f, "[{}]", strs.join(", "))?;
-                } else {
-                    let indent = " ".repeat(indent);
-                    write!(f, "[")?;
-                    for str in strs {
-                        if str.contains("\n") {
-                            for line in str.split("\n") {
-                                write!(f, "\n{indent}  {line}")?;
-                            }
-                        } else {
-                            write!(f, "\n{indent}  {str}")?;
-                        }
-                    }
-                    write!(f, "\n{indent}]")?;
-                }
-                Ok(())
+                write!(f, "[")?;
+                self.pretty_format_items(strs, indent, max_width, f)?;
+                write!(f, "]")
             }
             _ => write!(f, "<pending: {:?}>", self),
         }

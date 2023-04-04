@@ -132,3 +132,12 @@ impl From<Rc<Value>> for Thunk {
         })))
     }
 }
+
+impl fmt::Display for Thunk {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.evaluate() {
+            Ok(v) => v.fmt(f),
+            Err(e) => write!(f, "Error<{e:?}>"),
+        }
+    }
+}

@@ -19,14 +19,7 @@ fn main() {
                 }
             };
             // println!("Value: {:?}", value);
-            match &*value {
-                conflag::Value::Object(scope) => {
-                    let v = scope.get(&"eval".into()).unwrap().evaluate();
-                    // let v = scope.thunk(conflag::Value::Name("eval".into())).evaluate();
-                    println!("evaluating: eval = {:?}", v);
-                }
-                _ => (),
-            }
+            println!("evaluating: eval = {:?}", value.attr("eval"));
         }
     }
 }

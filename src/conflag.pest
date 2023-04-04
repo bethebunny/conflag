@@ -1,4 +1,5 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
 object = {
     "{" ~ "}" |
@@ -23,6 +24,7 @@ primitive = _{ object | array | string | number | boolean | null }
 atom = { (patch_map | patch | primitive | name | "(" ~ expression ~ ")") ~ (atom_attribute | atom_function_call )* }
 atom_attribute = {"." ~ name}
 atom_function_call = {"(" ~ expression_list ~ ")"}
+expression_list = { expression ~ ("," ~ expression)* ~ ","? }
 
 patch = { "&" ~ atom }
 patch_map = { "&&" ~ atom }
@@ -30,10 +32,6 @@ patch_map = { "&&" ~ atom }
 lambda = { "(" ~ arg_list ~ ")" ~ "=>" ~ expression }
 arg_list = { (name ~ ",")* ~ (name ~ ","?)? }
 
-/// function_call = { left_recursive_value ~ "(" ~ expression_list ~ ")" }
-expression_list = { expression ~ ("," ~ expression)* ~ ","? }
-
-/// attribute = { left_recursive_value ~ ("." ~ name)+ }
 plus = { atom ~ ("+" ~ atom)+ }
 
 name = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }

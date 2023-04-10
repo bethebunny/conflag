@@ -22,7 +22,7 @@ expression = _{
 primitive = _{ object | array | string | number | boolean | null }
 
 atom = { (patch_map | patch | primitive | name | "(" ~ expression ~ ")") ~ (atom_attribute | atom_function_call )* }
-atom_attribute = {"." ~ name}
+atom_attribute = {"." ~ (name | string) }
 atom_function_call = {"(" ~ expression_list ~ ")"}
 expression_list = { expression ~ ("," ~ expression)* ~ ","? }
 

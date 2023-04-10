@@ -2,7 +2,12 @@ use core::fmt;
 use std::rc::Rc;
 
 use crate::{
-    ast::AstNode, binop::BinOp, builtins::BuiltinFn, scope::ScopePtr, thunk::Thunk, Error,
+    ast::AstNode,
+    binop::{BinOp, Comparison},
+    builtins::BuiltinFn,
+    scope::ScopePtr,
+    thunk::Thunk,
+    Error,
 };
 
 #[derive(Debug, Clone)]
@@ -190,5 +195,11 @@ impl Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.pretty(false, f)
+    }
+}
+
+impl std::cmp::PartialEq<Value> for Value {
+    fn eq(&self, other: &Value) -> bool {
+        Comparison::Equal._compare_native(self, other).unwrap_or(false)
     }
 }

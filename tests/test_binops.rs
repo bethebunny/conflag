@@ -1,8 +1,4 @@
-#![feature(assert_matches)]
-use std::assert_matches::assert_matches;
-
 use conflag;
-use conflag::Value;
 
 mod add {
     mod number {
@@ -13,9 +9,30 @@ mod add {
             let v = conflag::parse("0 + 1").unwrap();
             assert!(v.number() == 1.);
         }
+
+        #[test]
+        fn test_patch() {
+            let v = conflag::parse("1 + &(v) => v + 2").unwrap();
+            assert!(v.number() == 3.);
+        }
     }
+
     mod object {
         use super::super::*;
+
+        #[test]
+        fn test_left_empty() {
+            let v = conflag::parse("{} + {a: 1}").unwrap();
+            let expected = conflag::parse("{a: 1}").unwrap();
+            assert!(v == expected);
+        }
+
+        #[test]
+        fn test_right_empty() {
+            let v = conflag::parse("{a: 1} + {}").unwrap();
+            let expected = conflag::parse("{a: 1}").unwrap();
+            assert!(v == expected);
+        }
     }
 
     mod patch {

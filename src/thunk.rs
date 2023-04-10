@@ -26,30 +26,36 @@ impl fmt::Debug for Thunk {
 
 impl Thunk {
     pub fn evaluate(&self) -> Result<Rc<Value>, Error> {
-        self.evaluate_tail_optimized()?;
+        if !self.is_evaluated() {
+            self.set_evaluated(self.try_evaluate());
+        }
         self.evaluated().borrow().clone().unwrap()
     }
 
-    fn evaluate_tail_optimized(&self) -> Result<(), Error> {
-        // Invariants:
-        // - Think of the stack as "bottom up", ie. added elements are added to the top
-        // - Thunks on the stack can depend only on thunks "higher" on the stack
-        // - When evaluating the top thunk on the stack, it may push new thunks to the stack instead
-        // let mut stack: Vec<Thunk> = vec![self.clone()];
+    #[inline]
+    fn try_evaluate(&self) -> Result<Rc<Value>, Error> {
+        // Tail optimization
+        // - The starting thunk's evaluation pointer is re-used for all intermediate thunks returned
+        //   as tail optimized calls.
+        // - Intermediate non-tail optimized calls will recursively call `evaluate`, adding to the stack depth.
+        // - When we get to a final primitive result (or an error), copy a pointer to its value into the
+        //   shared evaluation pointer.
+        // - Because we're using RCs, we won't do any non-trivial data cloning or copying for any of these operations.
+        // - Max stack depth appears relatively limited without further optimization, but more than enough
+        //   for any realistic configuration (O(10k) deep stack calls in release builds with ulimit 8mb stack size).
+        let result = &self.0.borrow().evaluated;
+        let mut thunk = self.iter_eval()?;
 
-        let mut thunks = vec![self.clone()];
-
-        while let Some(thunk) = thunks.last() {
-            if thunk.is_evaluated() {
-                for prev_thunk in &thunks[..thunks.len() - 1] {
-                    prev_thunk.tail_resolve(thunk);
-                }
-                break;
-            }
-            // println!("EVALUATE: {:?}", thunk);
-            thunks.push(thunk.iter_eval()?);
+        while !thunk.is_evaluated() {
+            thunk.0.borrow_mut().evaluated = result.clone();
+            thunk = thunk.iter_eval()?;
         }
-        Ok(())
+
+        if !Rc::ptr_eq(&self.0, &thunk.0) {
+            *result.borrow_mut() = thunk.evaluated().borrow().clone();
+        }
+
+        self.evaluated().borrow().clone().unwrap()
     }
 
     fn is_evaluated(&self) -> bool {
@@ -76,10 +82,7 @@ impl Thunk {
         Ref::map(self.0.borrow(), |body| &body.value)
     }
 
-    fn tail_resolve(&self, other: &Thunk) {
-        self.0.borrow_mut().evaluated = other.0.borrow().evaluated.clone();
-    }
-
+    #[inline]
     fn iter_eval(&self) -> Result<Thunk, Error> {
         match &**self.value() {
             Value::FunctionCall { f, args } => match &*f.evaluate()? {

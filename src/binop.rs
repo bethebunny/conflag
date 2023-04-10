@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use crate::{scope::ScopePtr, thunk::Thunk, value::Value, Error};
 
 #[derive(Debug, Clone, Copy)]
@@ -121,10 +119,10 @@ impl Comparison {
     pub fn compare(&self, left: &Thunk, right: &Thunk) -> Result<Thunk, Error> {
         let lv = left.evaluate()?;
         let rv = right.evaluate()?;
-        Ok(Value::Boolean(self._compare_native(lv, rv)?).into())
+        Ok(Value::Boolean(self._compare_native(&*lv, &*rv)?).into())
     }
 
-    pub fn _compare_native(self, left: Rc<Value>, right: Rc<Value>) -> Result<bool, Error> {
+    pub fn _compare_native(self, left: &Value, right: &Value) -> Result<bool, Error> {
         // println!("Comparing ({:?}):\n\t{:?}\n\t{:?}", self, left, right);
         Ok(match (&*left, &*right) {
             (Value::Object(l), Value::Object(r)) => self.compare_objects(l, r),
@@ -137,7 +135,7 @@ impl Comparison {
         }?)
     }
 
-    fn compare_different_types(&self, _left: Rc<Value>, _right: Rc<Value>) -> Result<bool, Error> {
+    fn compare_different_types(&self, _left: &Value, _right: &Value) -> Result<bool, Error> {
         Ok(match self {
             Comparison::Equal => false,
             Comparison::NotEqual => true,
@@ -192,7 +190,7 @@ impl Comparison {
         for (left, right) in l.iter().zip(r.iter()) {
             let lv = left.evaluate()?;
             let rv = right.evaluate()?;
-            let eq = Comparison::Equal._compare_native(lv, rv)?;
+            let eq = Comparison::Equal._compare_native(&*lv, &*rv)?;
             if !eq {
                 arrays_equal = false;
                 break;
@@ -226,7 +224,7 @@ impl Comparison {
         for attr in lvalues.keys() {
             let lv = lvalues[attr].evaluate()?;
             let rv = rvalues[attr].evaluate()?;
-            let eq = Comparison::Equal._compare_native(lv, rv)?;
+            let eq = Comparison::Equal._compare_native(&*lv, &*rv)?;
             if !eq {
                 objects_equal = false;
                 break;

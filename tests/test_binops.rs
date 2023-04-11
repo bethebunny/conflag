@@ -7,13 +7,13 @@ mod add {
         #[test]
         fn test_add() {
             let v = conflag::parse("0 + 1").unwrap();
-            assert!(v.number() == 1.);
+            assert!(v.number().unwrap() == 1.);
         }
 
         #[test]
         fn test_patch() {
-            let v = conflag::parse("1 + &(v) => v + 2").unwrap();
-            assert!(v.number() == 3.);
+            let v = conflag::parse("1 + &((v) => v + 2)").unwrap();
+            assert!(v.number().unwrap() == 3.);
         }
     }
 

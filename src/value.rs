@@ -7,7 +7,7 @@ use crate::{
     builtins::BuiltinFn,
     scope::ScopePtr,
     thunk::Thunk,
-    Error,
+    Error, Result,
 };
 
 #[derive(Debug, Clone)]
@@ -57,14 +57,14 @@ impl Value {
         }
     }
 
-    pub fn at(&self, index: usize) -> Result<Rc<Value>, Error> {
+    pub fn at(&self, index: usize) -> Result<Rc<Value>> {
         match self {
             Value::Array(values) => values[index].evaluate(),
             _ => Err(Error::BadFunctionCall), // TODO: better error type
         }
     }
 
-    pub fn attr(&self, attr: &str) -> Result<Rc<Value>, Error> {
+    pub fn attr(&self, attr: &str) -> Result<Rc<Value>> {
         match self {
             Value::Object(scope) => match scope.get(&attr.into()) {
                 Some(thunk) => thunk.evaluate(),
@@ -74,24 +74,33 @@ impl Value {
         }
     }
 
-    pub fn str(&self) -> &str {
+    pub fn str(&self) -> Result<&str> {
         match self {
-            Value::String(s) => s.as_str(),
-            _ => panic!("Tried to convert non-string value to str: {:?}", self),
+            Value::String(s) => Ok(s.as_str()),
+            _ => Err(Error::Custom(format!(
+                "Tried to convert non-string value to str: {:?}",
+                self
+            ))),
         }
     }
 
-    pub fn number(&self) -> f64 {
+    pub fn number(&self) -> Result<f64> {
         match self {
-            Value::Number(s) => *s,
-            _ => panic!("Tried to convert non-number value to number: {:?}", self),
+            Value::Number(s) => Ok(*s),
+            _ => Err(Error::Custom(format!(
+                "Tried to convert non-number value to number: {:?}",
+                self
+            ))),
         }
     }
 
-    pub fn bool(&self) -> bool {
+    pub fn bool(&self) -> Result<bool> {
         match self {
-            Value::Boolean(b) => *b,
-            _ => panic!("Tried to convert non-bool value to bool: {:?}", self),
+            Value::Boolean(b) => Ok(*b),
+            _ => Err(Error::Custom(format!(
+                "Tried to convert non-bool value to bool: {:?}",
+                self
+            ))),
         }
     }
 
@@ -200,6 +209,8 @@ impl fmt::Display for Value {
 
 impl std::cmp::PartialEq<Value> for Value {
     fn eq(&self, other: &Value) -> bool {
-        Comparison::Equal._compare_native(self, other).unwrap_or(false)
+        Comparison::Equal
+            ._compare_native(self, other)
+            .unwrap_or(false)
     }
 }

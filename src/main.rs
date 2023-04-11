@@ -9,18 +9,13 @@ fn main() {
         for file in files {
             // println!("\n\nParsing {}", file);
             let contents = fs::read_to_string(file).unwrap();
-            let value = match conflag::parse(&contents) {
-                Ok(value) => value,
-                Err(e) => {
-                    if let conflag::Error::ParseError(p) = &e {
-                        println!("Error! {}", p);
-                    }
-                    panic!("{:?}", e);
-                }
-            };
+            let value = conflag::parse(&contents).unwrap_or_else(|e| panic!("{}", e));
             // println!("Value: {:?}", value);
             // println!("evaluating: eval = {:?}", value.attr("eval"));
             println!("{}", value);
+
+            let v: u8 = conflag::serde::from_str("{a: b+1, b: 3}.a").unwrap();
+            println!("{v}");
         }
     }
 }

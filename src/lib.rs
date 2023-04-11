@@ -1,3 +1,4 @@
+#![feature(assert_matches)]
 #![feature(get_mut_unchecked)]
 
 use std::rc::Rc;
@@ -18,6 +19,12 @@ pub use value::Value;
 
 #[macro_use]
 extern crate pest_derive;
+
+#[cfg(feature = "serde")]
+extern crate serde as extern_serde;
+
+#[cfg(feature = "serde")]
+pub mod serde;
 
 // TODO
 // - some actual use cases!
@@ -46,7 +53,10 @@ pub enum Error {
     BadFunctionCall,
     UnsupportedOperation(BinOp, Rc<Value>, Rc<Value>),
     BadEvaluationAccess,
+    Custom(String),
 }
+
+type Result<T> = std::result::Result<T, Error>;
 
 impl From<pest::error::Error<Rule>> for Error {
     fn from(parse_error: pest::error::Error<Rule>) -> Self {
@@ -54,7 +64,35 @@ impl From<pest::error::Error<Rule>> for Error {
     }
 }
 
-pub fn parse(contents: &str) -> Result<Rc<Value>, Error> {
+impl From<&Error> for Error {
+    fn from(value: &Error) -> Self {
+        value.clone()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl extern_serde::de::Error for Error {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        Error::Custom(format!("{}", msg))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl extern_serde::ser::StdError for Error {}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::ParseError(e) => write!(f, "Parse error: {e}"),
+            _ => write!(f, "{:?}", self),
+        }
+    }
+}
+
+pub fn parse(contents: &str) -> Result<Rc<Value>> {
     let ast = AstNode::parse(contents)?;
     Thunk::from(ast.value(&builtins::builtins())).evaluate()
 }

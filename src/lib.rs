@@ -20,12 +20,6 @@ pub use value::Value;
 #[macro_use]
 extern crate pest_derive;
 
-#[cfg(feature = "serde")]
-extern crate serde as extern_serde;
-
-#[cfg(feature = "serde")]
-pub mod serde;
-
 // TODO
 // - some actual use cases!
 // - docs
@@ -36,7 +30,6 @@ pub mod serde;
 // - better errors (stop just using BadFunctionCall everywhere lmao)
 // - array splats
 // - dict splats
-// - derive(FromConfig)
 // - list thunks
 // - list indexing
 // - self arg in functions
@@ -70,19 +63,6 @@ impl From<&Error> for Error {
     }
 }
 
-#[cfg(feature = "serde")]
-impl extern_serde::de::Error for Error {
-    fn custom<T>(msg: T) -> Self
-    where
-        T: std::fmt::Display,
-    {
-        Error::Custom(format!("{}", msg))
-    }
-}
-
-#[cfg(feature = "serde")]
-impl extern_serde::ser::StdError for Error {}
-
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -96,3 +76,22 @@ pub fn parse(contents: &str) -> Result<Rc<Value>> {
     let ast = AstNode::parse(contents)?;
     Thunk::from(ast.value(&builtins::builtins())).evaluate()
 }
+
+#[cfg(feature = "serde")]
+extern crate serde as extern_serde;
+
+#[cfg(feature = "serde")]
+pub mod serde;
+
+#[cfg(feature = "serde")]
+impl extern_serde::de::Error for Error {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        Error::Custom(format!("{}", msg))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl extern_serde::ser::StdError for Error {}

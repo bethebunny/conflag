@@ -8,18 +8,14 @@ use crate::scope::ScopePtr;
 use crate::thunk::Thunk;
 use crate::{Error, Result, Value};
 
-pub struct Deserializer {
+struct Deserializer {
     // This string starts with the input data and characters are truncated off
     // the beginning as data is parsed.
     value: Result<Rc<Value>>,
 }
 
 impl Deserializer {
-    // By convention, `Deserializer` constructors are named like `from_xyz`.
-    // That way basic use cases are satisfied by something like
-    // `serde_json::from_str(...)` while advanced use cases that require a
-    // deserializer can make one with `serde_json::Deserializer::from_str(...)`.
-    pub fn from_str(input: &str) -> Self {
+    fn from_str(input: &str) -> Self {
         Deserializer {
             value: crate::parse(input),
         }
@@ -29,8 +25,6 @@ impl Deserializer {
 // By convention, the public API of a Serde deserializer is one or more
 // `from_xyz` methods such as `from_str`, `from_bytes`, or `from_reader`
 // depending on what Rust types the deserializer is able to consume as input.
-//
-// This basic deserializer supports only `from_str`.
 pub fn from_str<'a, T>(s: &'a str) -> Result<T>
 where
     T: Deserialize<'a>,
@@ -195,7 +189,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
         self.deserialize_str(visitor)
     }
 
-    // TODO: this doesn't work, something something borrows/references/owned values
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,

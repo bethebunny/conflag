@@ -25,6 +25,8 @@ extern crate pest_derive;
 // - docs
 // - moar docs
 // - lots of tests
+// - github
+// - CI
 // - binops: -, *, /
 // - binops: precedence
 // - better errors (stop just using BadFunctionCall everywhere lmao)
@@ -36,6 +38,9 @@ extern crate pest_derive;
 // - arrays as linked lists
 //   - List: (Thunk, Option<List>)
 //   - allow infinite streams
+// - Sync + Send
+// - rethink Rc<Value> as an interface
+// - reduce # of extra clones
 
 #[derive(Debug, Clone)]
 pub enum Error {
@@ -95,3 +100,13 @@ impl extern_serde::de::Error for Error {
 
 #[cfg(feature = "serde")]
 impl extern_serde::ser::StdError for Error {}
+
+#[cfg(feature = "python")]
+pub mod py;
+
+#[cfg(feature = "python")]
+impl From<Error> for pyo3::PyErr {
+    fn from(value: Error) -> Self {
+        crate::py::ConflagError::new_err(format!("{value}"))
+    }
+}

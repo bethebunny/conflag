@@ -5,10 +5,16 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "conflag"
+crate-type = ["rlib", "cdylib"]
+
 [features]
 serde = ["dep:serde"]
+python = ["dep:pyo3"]
 
 [dependencies]
 pest = "2.5.6"
 pest_derive = "2.5.6"
 serde = { version = "1.0.159", optional = true, features=["derive"] }
+pyo3 = { version = "0.18.2", optional = true, features=["extension-module"] }

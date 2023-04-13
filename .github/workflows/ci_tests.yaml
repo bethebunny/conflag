@@ -91,12 +91,9 @@ jobs:
           cargo check --features ${{ matrix.feature }}
           cargo test --all --features ${{ matrix.feature }}
 
-  all-tests:
-    needs: [test-feature, test-no-features, test-all-features, test-default-features, lint]
-
   # TODO: release build + python builds
   build:
-    needs: all-tests
+    needs: [test-feature, test-no-features, test-all-features, test-default-features, lint]
     runs-on: ubuntu-latest
     steps:
       - name: Build

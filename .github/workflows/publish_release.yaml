@@ -1,0 +1,22 @@
+name: Publish Release
+
+on:
+  release:
+    types: [released]
+
+
+# TODO:
+# - check out the right release tag
+# - login info
+# - actual publish
+# - publish to pypi also
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Publish
+        run: |
+          cargo publish

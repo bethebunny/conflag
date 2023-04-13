@@ -34,8 +34,4 @@ mod add {
             assert!(v == expected);
         }
     }
-
-    mod patch {
-        use super::super::*;
-    }
 }

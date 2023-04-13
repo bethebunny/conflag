@@ -1,8 +1,6 @@
 use std::env;
 use std::fs;
 
-use conflag;
-
 fn main() {
     let args: Vec<String> = env::args().collect();
     if let [_, files @ ..] = &args[..] {

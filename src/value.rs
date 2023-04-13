@@ -43,18 +43,18 @@ pub enum Value {
 
 impl Value {
     pub fn is_primitive(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Value::Object(..)
-            | Value::Array(..)
-            | Value::Patch(..)
-            | Value::Number(..)
-            | Value::String(..)
-            | Value::Boolean(..)
-            | Value::Null
-            | Value::Lambda { .. }
-            | Value::BuiltinFn(..) => true,
-            _ => false,
-        }
+                | Value::Array(..)
+                | Value::Patch(..)
+                | Value::Number(..)
+                | Value::String(..)
+                | Value::Boolean(..)
+                | Value::Null
+                | Value::Lambda { .. }
+                | Value::BuiltinFn(..)
+        )
     }
 
     pub fn at(&self, index: usize) -> Result<Rc<Value>> {
@@ -105,10 +105,7 @@ impl Value {
     }
 
     pub fn is_null(&self) -> bool {
-        match self {
-            Value::Null => true,
-            _ => false,
-        }
+        matches!(self, Value::Null)
     }
 
     fn pretty_format_items(
@@ -119,7 +116,7 @@ impl Value {
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
         let total_length: usize = items.iter().map(|s| s.len()).sum();
-        let wraps = items.iter().any(|s| s.contains("\n"));
+        let wraps = items.iter().any(|s| s.contains('\n'));
         // `indent` is a proxy for the start of the current line (TODO)
         // each value takes up its own length + 2 (for comma and space separation)
         // and then 1 for the final closing character.
@@ -132,12 +129,8 @@ impl Value {
         } else {
             let indent = " ".repeat(indent);
             for item in items {
-                if item.contains("\n") {
-                    for line in item.split("\n") {
-                        write!(f, "\n{indent}  {line}")?;
-                    }
-                } else {
-                    write!(f, "\n{indent}  {item}")?;
+                for line in item.split('\n') {
+                    write!(f, "\n{indent}  {line}")?;
                 }
                 write!(f, ",")?;
             }
@@ -175,7 +168,7 @@ impl Value {
                 let pair_strs = keys
                     .iter()
                     .map(|k| {
-                        // TODO: what about keys with spaces?
+                        // TODO: what about keys that aren't identifiers, eg. with spaces?
                         format!("{k}: {}", scope.get(k).unwrap())
                     })
                     .collect::<Vec<_>>();
@@ -210,7 +203,7 @@ impl fmt::Display for Value {
 impl std::cmp::PartialEq<Value> for Value {
     fn eq(&self, other: &Value) -> bool {
         Comparison::Equal
-            ._compare_native(self, other)
+            .compare_values(self, other)
             .unwrap_or(false)
     }
 }

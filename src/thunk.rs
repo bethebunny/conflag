@@ -4,12 +4,14 @@ use std::{
     rc::Rc,
 };
 
-use crate::{builtins::BuiltinFn, value::Value, Error};
+use crate::{builtins::BuiltinFn, value::Value, Error, Result};
+
+type ThunkMemo = RefCell<Option<Result<Rc<Value>>>>;
 
 #[derive(Clone)]
 pub struct ThunkBody {
     value: Rc<Value>,
-    evaluated: Rc<RefCell<Option<Result<Rc<Value>, Error>>>>,
+    evaluated: Rc<ThunkMemo>,
 }
 
 #[derive(Clone)]
@@ -25,7 +27,7 @@ impl fmt::Debug for Thunk {
 }
 
 impl Thunk {
-    pub fn evaluate(&self) -> Result<Rc<Value>, Error> {
+    pub fn evaluate(&self) -> Result<Rc<Value>> {
         if !self.is_evaluated() {
             self.set_evaluated(self.try_evaluate());
         }
@@ -33,7 +35,7 @@ impl Thunk {
     }
 
     #[inline]
-    fn try_evaluate(&self) -> Result<Rc<Value>, Error> {
+    fn try_evaluate(&self) -> Result<Rc<Value>> {
         // Tail optimization
         // - The starting thunk's evaluation pointer is re-used for all intermediate thunks returned
         //   as tail optimized calls.
@@ -70,20 +72,20 @@ impl Thunk {
         }
     }
 
-    pub(crate) fn evaluated<'a>(&'a self) -> Ref<'a, RefCell<Option<Result<Rc<Value>, Error>>>> {
+    pub(crate) fn evaluated(&self) -> Ref<ThunkMemo> {
         Ref::map(self.0.borrow(), |v| &*v.evaluated)
     }
 
-    fn set_evaluated(&self, result: Result<Rc<Value>, Error>) {
+    fn set_evaluated(&self, result: Result<Rc<Value>>) {
         *self.0.borrow().evaluated.borrow_mut() = Some(result)
     }
 
-    fn value<'a>(&'a self) -> Ref<'a, Rc<Value>> {
+    fn value(&self) -> Ref<Rc<Value>> {
         Ref::map(self.0.borrow(), |body| &body.value)
     }
 
     #[inline]
-    fn iter_eval(&self) -> Result<Thunk, Error> {
+    fn iter_eval(&self) -> Result<Thunk> {
         match &**self.value() {
             Value::FunctionCall { f, args } => match &*f.evaluate()? {
                 Value::Lambda {
@@ -100,7 +102,7 @@ impl Thunk {
                     );
                     Ok(expr.value(&scope).into())
                 }
-                Value::BuiltinFn(BuiltinFn(_, f)) => f(&args),
+                Value::BuiltinFn(BuiltinFn(_, f)) => f(args),
                 _ => Err(Error::BadFunctionCall),
             },
             Value::Name(scope, name) => scope

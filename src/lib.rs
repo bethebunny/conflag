@@ -44,7 +44,7 @@ extern crate pest_derive;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    ParseError(pest::error::Error<Rule>),
+    ParseError(Box<pest::error::Error<Rule>>),
     NameResolutionError(ScopePtr, String),
     AttributeAccessOnBadType(Rc<Value>, String),
     NoSuchAttribute(ScopePtr, String),
@@ -58,7 +58,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 impl From<pest::error::Error<Rule>> for Error {
     fn from(parse_error: pest::error::Error<Rule>) -> Self {
-        Error::ParseError(parse_error)
+        Error::ParseError(Box::new(parse_error))
     }
 }
 

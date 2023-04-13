@@ -3,7 +3,7 @@ use std::{collections::HashMap, fs};
 
 use crate::{ast::AstNode, scope::ScopePtr, thunk::Thunk, value::Value, Error};
 
-type _BuiltinFn = fn(&Vec<Thunk>) -> Result<Thunk, Error>;
+type _BuiltinFn = fn(&[Thunk]) -> Result<Thunk, Error>;
 
 #[derive(Clone)]
 pub struct BuiltinFn(pub String, pub _BuiltinFn);
@@ -20,26 +20,26 @@ impl fmt::Debug for BuiltinFn {
     }
 }
 
-fn builtin_bool(args: &Vec<Thunk>) -> Result<Thunk, Error> {
-    if args.len() != 1 {
-        Err(Error::BadFunctionCall)?;
+fn builtin_bool(args: &[Thunk]) -> Result<Thunk, Error> {
+    if let [v] = args {
+        Ok(Value::Boolean(match &*v.evaluate()? {
+            Value::Object(scope) => !scope.values().is_empty(),
+            Value::Array(values) => !values.is_empty(),
+            Value::Number(num) => *num != 0.,
+            Value::Boolean(val) => *val,
+            Value::String(val) => !val.is_empty(),
+            Value::Null => false,
+            Value::Lambda { .. } => true,
+            _ => Err(Error::BadFunctionCall)?,
+        })
+        .into())
+    } else {
+        Err(Error::BadFunctionCall)
     }
-    let v = args.first().unwrap().evaluate();
-    Ok(Value::Boolean(match &*v.clone()? {
-        Value::Object(scope) => scope.values().len() != 0,
-        Value::Array(values) => values.len() != 0,
-        Value::Number(num) => *num != 0.,
-        Value::Boolean(val) => *val,
-        Value::String(val) => val != "",
-        Value::Null => false,
-        Value::Lambda { .. } => true,
-        _ => Err(Error::BadFunctionCall)?,
-    })
-    .into())
 }
 
-fn builtin_if(args: &Vec<Thunk>) -> Result<Thunk, Error> {
-    if let [pred, true_value, false_value] = &args[..] {
+fn builtin_if(args: &[Thunk]) -> Result<Thunk, Error> {
+    if let [pred, true_value, false_value] = args {
         let bool_args = vec![pred.clone()];
         let pred = builtin_bool(&bool_args)?;
         Ok(match &*pred.evaluate()? {
@@ -52,11 +52,9 @@ fn builtin_if(args: &Vec<Thunk>) -> Result<Thunk, Error> {
     }
 }
 
-fn builtin_map(args: &Vec<Thunk>) -> Result<Thunk, Error> {
-    if let [f, array] = &args[..] {
+fn builtin_map(args: &[Thunk]) -> Result<Thunk, Error> {
+    if let [f, array] = args {
         match &*array.evaluate()? {
-            // TODO: Hmm I want to return an un-evaluated array here; will that be a problem?
-            //       _I think_ my execution model makes the assumption that .evaluate() is "final" right now.
             Value::Array(values) => {
                 let mapped = values.iter().map(|v| {
                     Value::FunctionCall {
@@ -91,11 +89,11 @@ fn builtin_map(args: &Vec<Thunk>) -> Result<Thunk, Error> {
     }
 }
 
-fn builtin_import(args: &Vec<Thunk>) -> Result<Thunk, Error> {
-    if let [target] = &args[..] {
+fn builtin_import(args: &[Thunk]) -> Result<Thunk, Error> {
+    if let [target] = args {
         match &*target.evaluate()? {
             Value::String(path) => {
-                let contents = fs::read_to_string(path).or_else(|_| Err(Error::BadFunctionCall))?;
+                let contents = fs::read_to_string(path).map_err(|_| Error::BadFunctionCall)?;
                 let node = AstNode::parse(contents.as_str())?;
                 Ok(node.value(&builtins()).into())
             }
@@ -106,8 +104,8 @@ fn builtin_import(args: &Vec<Thunk>) -> Result<Thunk, Error> {
     }
 }
 
-fn builtin_reduce(args: &Vec<Thunk>) -> Result<Thunk, Error> {
-    if let [f, array, state] = &args[..] {
+fn builtin_reduce(args: &[Thunk]) -> Result<Thunk, Error> {
+    if let [f, array, state] = args {
         match &*array.evaluate()? {
             Value::Array(values) => {
                 let mut state = state.clone();

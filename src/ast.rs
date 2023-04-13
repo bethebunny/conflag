@@ -124,7 +124,7 @@ impl AstNode {
                         let mut inner_rules = pair.into_inner();
                         let name = AstNode::parse_name_or_string(inner_rules.next().unwrap());
                         let value = AstNode::parse_value(inner_rules.next().unwrap());
-                        value.and_then(|v| Ok((name, v)))
+                        value.map(|v| (name, v))
                     })
                     .collect();
                 AstNode::Object(pairs?)

@@ -302,7 +302,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
         if let Value::Object(scope) = &**self.value.as_ref()? {
             visitor.visit_map(ScopeIterator::from(scope))
         } else {
-            Err(Error::Custom(format!("Can't deserialie non-object to map: {}", self.value.as_ref()?)))
+            Err(Error::Custom(format!(
+                "Can't deserialie non-object to map: {}",
+                self.value.as_ref()?
+            )))
         }
     }
 

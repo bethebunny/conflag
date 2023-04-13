@@ -100,7 +100,8 @@ fn builtin_import(args: &[Thunk]) -> Result<Thunk> {
     if let [target] = args {
         match &*target.evaluate()? {
             Value::String(path) => {
-                let contents = fs::read_to_string(path).map_err(|e| Error::ImportReadError(Rc::new(e)))?;
+                let contents =
+                    fs::read_to_string(path).map_err(|e| Error::ImportReadError(Rc::new(e)))?;
                 let node = AstNode::parse(contents.as_str())?;
                 Ok(node.value(&builtins()).into())
             }

@@ -103,7 +103,10 @@ impl Thunk {
                     Ok(expr.value(&scope).into())
                 }
                 Value::BuiltinFn(BuiltinFn(_, f)) => f(args),
-                _ => Err(Error::BadFunctionCall("Tried to call non-function".into(), self.clone())),
+                _ => Err(Error::BadFunctionCall(
+                    "Tried to call non-function".into(),
+                    self.clone(),
+                )),
             },
             Value::Name(scope, name) => scope
                 .name_lookup(name)

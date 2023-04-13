@@ -594,7 +594,7 @@ mod test {
     #[test]
     fn test_i8_invalid() {
         let v: Result<i8> = from_str("true");
-        assert_matches!(v, Err(Error::Custom(_)));
+        assert_matches!(v, Err(Error::TypeError(..)));
     }
 
     #[test]

@@ -2,6 +2,14 @@
 name = "conflag"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "A simple and powreful configuration language, extending JSON with declarative and functional language features."
+homepage = "https://github.com/bethebunny/conflag"
+repository = "https://github.com/bethebunny/conflag"
+readme = "README.md"
+keywords = ["language", "pest", "serde", "json", "serialization"]
+categories = ["config"]
+excludes = [".github", ".vscode"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

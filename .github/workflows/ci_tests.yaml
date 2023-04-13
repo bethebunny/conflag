@@ -9,7 +9,7 @@ on:
       - 'feature-**'
 
 jobs:
-  setup:
+  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -26,76 +26,45 @@ jobs:
           rustc --version
           cargo clippy --version          
 
-  features:
-    needs: [setup]
-    runs-on: ubuntu-latest
-    steps:
       - name: List Features
         id: list-features
         run: |
           echo ::set-output name=features::$(cargo read-manifest | jq '.features')
-    outputs:
-      matrix: ${{ steps.list-features.outputs.features }}
 
-  lint:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
       - name: Lint
         run: |
           cd conflag
           cargo fmt -- --check
           cargo clippy -- -D warnings          
 
-  test-default-features:
-    needs: [setup, features]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Test
+      - name: Test Default Features
         run: |
           cd conflag
           cargo check
           cargo test --all
 
-  test-no-features:
-    needs: [setup, features]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Test
+      - name: Test No Features
         run: |
           cd conflag
           cargo check --no-default-features
           cargo test --all --no-default-features
 
-  test-all-features:
-    needs: [setup, features]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Test
+      - name: Test All Features
         run: |
           cd conflag
           cargo check --all-features
           cargo test --all --all-features
 
-  test-feature:
-    needs: [setup, features]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        feature: ${{ fromJson(needs.features.outputs.features) }}
-    steps:
-      - name: Test
+      - name: Test Each Feature
         run: |
           cd conflag
-          cargo check --features ${{ matrix.feature }}
-          cargo test --all --features ${{ matrix.feature }}
+          for feature in $(cargo read-manifest | jq -r '.features | keys[]'); do
+            printf '\n\n\n---------------------------------------------------------------------------'
+            printf "\nn\t TESTING FEATURE: $feature\n\n"
+            cargo check --features $feature
+            cargo test --all --features $feature
+          done
 
-  # TODO: release build + python builds
-  build:
-    needs: [test-feature, test-no-features, test-all-features, test-default-features, lint]
-    runs-on: ubuntu-latest
-    steps:
       - name: Build
         run: |
           cd conflag

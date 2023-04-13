@@ -1,4 +1,4 @@
-use std::{rc::Rc};
+use std::rc::Rc;
 
 use pyo3::{
     create_exception,

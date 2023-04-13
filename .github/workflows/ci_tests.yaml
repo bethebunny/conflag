@@ -1,0 +1,105 @@
+name: CI Tests
+
+# This workflow run tests and build for each push
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature-**'
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Update local toolchain
+        run: |
+          rustup update
+          rustup component add clippy
+          rustup install nightly          
+
+      - name: Toolchain info
+        run: |
+          cargo --version --verbose
+          rustc --version
+          cargo clippy --version          
+
+  features:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    steps:
+      - name: List Features
+        id: list-features
+        run: |
+          echo ::set-output name=features::$(cargo read-manifest | jq '.features')
+    outputs:
+      matrix: ${{ steps.list-features.outputs.features }}
+
+  lint:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lint
+        run: |
+          cd conflag
+          cargo fmt -- --check
+          cargo clippy -- -D warnings          
+
+  test-default-features:
+    needs: [setup, features]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        run: |
+          cd conflag
+          cargo check
+          cargo test --all
+
+  test-no-features:
+    needs: [setup, features]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        run: |
+          cd conflag
+          cargo check --no-default-features
+          cargo test --all --no-default-features
+
+  test-all-features:
+    needs: [setup, features]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        run: |
+          cd conflag
+          cargo check --all-features
+          cargo test --all --all-features
+
+  test-feature:
+    needs: [setup, features]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: ${{ fromJson(needs.features.outputs.features) }}
+    steps:
+      - name: Test
+        run: |
+          cd conflag
+          cargo check --features ${{ matrix.feature }}
+          cargo test --all --features ${{ matrix.feature }}
+
+  all-tests:
+    needs: [test-feature, test-no-features, test-all-features, test-default-features, lint]
+
+  # TODO: release build + python builds
+  build:
+    needs: all-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build
+        run: |
+          cd conflag
+          cargo build --release  

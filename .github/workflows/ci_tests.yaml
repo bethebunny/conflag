@@ -26,38 +26,28 @@ jobs:
           rustc --version
           cargo clippy --version          
 
-      - name: List Features
-        id: list-features
-        run: |
-          echo ::set-output name=features::$(cargo read-manifest | jq '.features')
-
       - name: Lint
         run: |
-          cd conflag
           cargo fmt -- --check
           cargo clippy -- -D warnings          
 
       - name: Test Default Features
         run: |
-          cd conflag
           cargo check
           cargo test --all
 
       - name: Test No Features
         run: |
-          cd conflag
           cargo check --no-default-features
           cargo test --all --no-default-features
 
       - name: Test All Features
         run: |
-          cd conflag
           cargo check --all-features
           cargo test --all --all-features
 
       - name: Test Each Feature
         run: |
-          cd conflag
           for feature in $(cargo read-manifest | jq -r '.features | keys[]'); do
             printf '\n\n\n---------------------------------------------------------------------------'
             printf "\nn\t TESTING FEATURE: $feature\n\n"
@@ -67,5 +57,4 @@ jobs:
 
       - name: Build
         run: |
-          cd conflag
           cargo build --release  

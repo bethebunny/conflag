@@ -51,7 +51,7 @@ jobs:
         run: |
           for feature in $(cargo read-manifest | jq -r '.features | keys[]'); do
             printf '\n\n\n---------------------------------------------------------------------------'
-            printf "\nn\t TESTING FEATURE: $feature\n\n"
+            printf "\n\n\t TESTING FEATURE: $feature\n\n"
             cargo check --features $feature
             cargo test --all --features $feature
           done

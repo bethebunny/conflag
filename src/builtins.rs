@@ -1,9 +1,9 @@
 use core::fmt;
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, rc::Rc};
 
-use crate::{ast::AstNode, scope::ScopePtr, thunk::Thunk, value::Value, Error};
+use crate::{ast::AstNode, scope::ScopePtr, thunk::Thunk, value::Value, Error, Result};
 
-type _BuiltinFn = fn(&[Thunk]) -> Result<Thunk, Error>;
+type _BuiltinFn = fn(&[Thunk]) -> Result<Thunk>;
 
 #[derive(Clone)]
 pub struct BuiltinFn(pub String, pub _BuiltinFn);
@@ -20,7 +20,11 @@ impl fmt::Debug for BuiltinFn {
     }
 }
 
-fn builtin_bool(args: &[Thunk]) -> Result<Thunk, Error> {
+fn builtin_invalid_args<K>(name: &'static str, args: &[Thunk]) -> Result<K> {
+    Err(Error::BuiltinInvalidArguments(name, args.to_vec()))
+}
+
+fn builtin_bool(args: &[Thunk]) -> Result<Thunk> {
     if let [v] = args {
         Ok(Value::Boolean(match &*v.evaluate()? {
             Value::Object(scope) => !scope.values().is_empty(),
@@ -30,15 +34,15 @@ fn builtin_bool(args: &[Thunk]) -> Result<Thunk, Error> {
             Value::String(val) => !val.is_empty(),
             Value::Null => false,
             Value::Lambda { .. } => true,
-            _ => Err(Error::BadFunctionCall)?,
+            _ => Err(Error::TypeError("bool not supported".into(), v.clone()))?,
         })
         .into())
     } else {
-        Err(Error::BadFunctionCall)
+        builtin_invalid_args("bool(v)", args)
     }
 }
 
-fn builtin_if(args: &[Thunk]) -> Result<Thunk, Error> {
+fn builtin_if(args: &[Thunk]) -> Result<Thunk> {
     if let [pred, true_value, false_value] = args {
         let bool_args = vec![pred.clone()];
         let pred = builtin_bool(&bool_args)?;
@@ -48,11 +52,11 @@ fn builtin_if(args: &[Thunk]) -> Result<Thunk, Error> {
             _ => unreachable!(),
         })
     } else {
-        Err(Error::BadFunctionCall)
+        builtin_invalid_args("if(pred, t, f)", args)
     }
 }
 
-fn builtin_map(args: &[Thunk]) -> Result<Thunk, Error> {
+fn builtin_map(args: &[Thunk]) -> Result<Thunk> {
     if let [f, array] = args {
         match &*array.evaluate()? {
             Value::Array(values) => {
@@ -82,29 +86,35 @@ fn builtin_map(args: &[Thunk]) -> Result<Thunk, Error> {
                     .collect();
                 Ok(Value::Object(ScopePtr::from_values(mapped, Some(scope.clone()))).into())
             }
-            _ => Err(Error::BadFunctionCall),
+            _ => Err(Error::TypeError(
+                "map unsupported over".into(),
+                array.clone(),
+            )),
         }
     } else {
-        Err(Error::BadFunctionCall)
+        builtin_invalid_args("map(f, array | object)", args)
     }
 }
 
-fn builtin_import(args: &[Thunk]) -> Result<Thunk, Error> {
+fn builtin_import(args: &[Thunk]) -> Result<Thunk> {
     if let [target] = args {
         match &*target.evaluate()? {
             Value::String(path) => {
-                let contents = fs::read_to_string(path).map_err(|_| Error::BadFunctionCall)?;
+                let contents = fs::read_to_string(path).map_err(|e| Error::ImportReadError(Rc::new(e)))?;
                 let node = AstNode::parse(contents.as_str())?;
                 Ok(node.value(&builtins()).into())
             }
-            _ => Err(Error::BadFunctionCall),
+            _ => Err(Error::TypeError(
+                "must import string path".into(),
+                target.clone(),
+            )),
         }
     } else {
-        Err(Error::BadFunctionCall)
+        builtin_invalid_args("import(path)", args)
     }
 }
 
-fn builtin_reduce(args: &[Thunk]) -> Result<Thunk, Error> {
+fn builtin_reduce(args: &[Thunk]) -> Result<Thunk> {
     if let [f, array, state] = args {
         match &*array.evaluate()? {
             Value::Array(values) => {
@@ -118,10 +128,13 @@ fn builtin_reduce(args: &[Thunk]) -> Result<Thunk, Error> {
                 }
                 Ok(state)
             }
-            _ => Err(Error::BadFunctionCall),
+            _ => Err(Error::TypeError(
+                "reduce unsupported over".into(),
+                array.clone(),
+            )),
         }
     } else {
-        Err(Error::BadFunctionCall)
+        builtin_invalid_args("reduce(f, array, initial_state)", args)
     }
 }
 

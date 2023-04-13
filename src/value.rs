@@ -59,8 +59,14 @@ impl Value {
 
     pub fn at(&self, index: usize) -> Result<Rc<Value>> {
         match self {
-            Value::Array(values) => values[index].evaluate(),
-            _ => Err(Error::BadFunctionCall), // TODO: better error type
+            Value::Array(values) => match values.get(index) {
+                Some(thunk) => thunk.evaluate(),
+                None => Err(Error::IndexError(index, self.clone().into())),
+            },
+            _ => Err(Error::TypeError(
+                "Can't index into non-array".into(),
+                self.clone().into(),
+            )),
         }
     }
 
@@ -70,37 +76,40 @@ impl Value {
                 Some(thunk) => thunk.evaluate(),
                 None => Err(Error::NoSuchAttribute(scope.clone(), attr.into())),
             },
-            _ => Err(Error::BadFunctionCall), // TODO: better error type
+            _ => Err(Error::TypeError(
+                "Can't call attr on non-object".into(),
+                self.clone().into(),
+            )),
         }
     }
 
     pub fn str(&self) -> Result<&str> {
         match self {
             Value::String(s) => Ok(s.as_str()),
-            _ => Err(Error::Custom(format!(
-                "Tried to convert non-string value to str: {:?}",
-                self
-            ))),
+            _ => Err(Error::TypeError(
+                "Can't convert non-string value to str".into(),
+                self.clone().into(),
+            )),
         }
     }
 
     pub fn number(&self) -> Result<f64> {
         match self {
             Value::Number(s) => Ok(*s),
-            _ => Err(Error::Custom(format!(
-                "Tried to convert non-number value to number: {:?}",
-                self
-            ))),
+            _ => Err(Error::TypeError(
+                "Can't convert non-number value to number".into(),
+                self.clone().into(),
+            )),
         }
     }
 
     pub fn bool(&self) -> Result<bool> {
         match self {
             Value::Boolean(b) => Ok(*b),
-            _ => Err(Error::Custom(format!(
-                "Tried to convert non-bool value to bool: {:?}",
-                self
-            ))),
+            _ => Err(Error::TypeError(
+                "Can't convert non-bool value to bool".into(),
+                self.clone().into(),
+            )),
         }
     }
 

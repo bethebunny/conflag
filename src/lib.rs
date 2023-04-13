@@ -29,7 +29,6 @@ extern crate pest_derive;
 // - CI
 // - binops: -, *, /
 // - binops: precedence
-// - better errors (stop just using BadFunctionCall everywhere lmao)
 // - array splats
 // - dict splats
 // - list thunks
@@ -45,12 +44,17 @@ extern crate pest_derive;
 #[derive(Debug, Clone)]
 pub enum Error {
     ParseError(Box<pest::error::Error<Rule>>),
+    ImportReadError(Rc<std::io::Error>),
     NameResolutionError(ScopePtr, String),
     AttributeAccessOnBadType(Rc<Value>, String),
     NoSuchAttribute(ScopePtr, String),
-    BadFunctionCall,
+    BadFunctionCall(String, Thunk),
+    InvalidArguments(Thunk, Vec<Thunk>),
+    BuiltinInvalidArguments(&'static str, Vec<Thunk>),
     UnsupportedOperation(BinOp, Rc<Value>, Rc<Value>),
     BadEvaluationAccess,
+    TypeError(String, Thunk),
+    IndexError(usize, Thunk),
     Custom(String),
 }
 

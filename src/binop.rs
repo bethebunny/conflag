@@ -1,4 +1,4 @@
-use crate::{scope::ScopePtr, thunk::Thunk, value::Value, Error};
+use crate::{scope::ScopePtr, thunk::Thunk, value::Value, Error, Result};
 
 #[derive(Debug, Clone, Copy)]
 pub enum BinOp {
@@ -22,7 +22,7 @@ pub enum Comparison {
 }
 
 impl BinOp {
-    pub fn evaluate(&self, left: &Thunk, right: &Thunk) -> Result<Thunk, Error> {
+    pub fn evaluate(&self, left: &Thunk, right: &Thunk) -> Result<Thunk> {
         match self {
             BinOp::Plus => self.evaluate_plus(left, right),
             BinOp::Patch => BinOp::patch(left, right),
@@ -32,7 +32,7 @@ impl BinOp {
         }
     }
 
-    fn evaluate_plus(&self, left: &Thunk, right: &Thunk) -> Result<Thunk, Error> {
+    fn evaluate_plus(&self, left: &Thunk, right: &Thunk) -> Result<Thunk> {
         let rv = right.evaluate()?;
         Ok(match &*rv {
             Value::Patch(p) => Value::BinOp {
@@ -76,7 +76,7 @@ impl BinOp {
         .into())
     }
 
-    fn patch(left: &Thunk, right: &Thunk) -> Result<Thunk, Error> {
+    fn patch(left: &Thunk, right: &Thunk) -> Result<Thunk> {
         let rv = right.evaluate();
         Ok(match &**rv.as_ref()? {
             Value::Lambda { .. } | Value::BuiltinFn(..) => Value::FunctionCall {
@@ -108,7 +108,7 @@ impl BinOp {
         .into())
     }
 
-    fn replace(left: &Thunk, right: &Thunk) -> Result<Thunk, Error> {
+    fn replace(left: &Thunk, right: &Thunk) -> Result<Thunk> {
         Ok(match &*right.evaluate()? {
             Value::Patch(p) => Value::BinOp {
                 kind: BinOp::Patch,
@@ -122,17 +122,17 @@ impl BinOp {
 }
 
 impl Comparison {
-    pub fn compare(&self, left: &Thunk, right: &Thunk) -> Result<Thunk, Error> {
+    pub fn compare(&self, left: &Thunk, right: &Thunk) -> Result<Thunk> {
         Ok(Value::Boolean(self._compare(left, right)?).into())
     }
 
-    fn _compare(self, left: &Thunk, right: &Thunk) -> Result<bool, Error> {
+    fn _compare(&self, left: &Thunk, right: &Thunk) -> Result<bool> {
         let lv = left.evaluate()?;
         let rv = right.evaluate()?;
         self.compare_values(&lv, &rv)
     }
 
-    pub fn compare_values(self, left: &Value, right: &Value) -> Result<bool, Error> {
+    pub fn compare_values(&self, left: &Value, right: &Value) -> Result<bool> {
         match (left, right) {
             (Value::Object(l), Value::Object(r)) => self.compare_objects(l, r),
             (Value::Array(l), Value::Array(r)) => self.compare_arrays(l, r),
@@ -144,39 +144,48 @@ impl Comparison {
         }
     }
 
-    fn compare_different_types(&self, _left: &Value, _right: &Value) -> Result<bool, Error> {
+    // TODO: don't require value-level clone for unsupported error
+    fn unsupported<K>(&self, left: &Value, right: &Value) -> Result<K> {
+        Err(Error::UnsupportedOperation(
+            BinOp::Compare(*self),
+            left.clone().into(),
+            right.clone().into(),
+        ))
+    }
+
+    fn compare_different_types(&self, left: &Value, right: &Value) -> Result<bool> {
         Ok(match self {
             Comparison::Equal => false,
             Comparison::NotEqual => true,
-            _ => Err(Error::BadFunctionCall)?,
+            _ => self.unsupported(left, right)?,
         })
     }
 
-    fn compare_nulls(&self) -> Result<bool, Error> {
+    fn compare_nulls(&self) -> Result<bool> {
         Ok(match self {
             Comparison::Equal => true,
             Comparison::NotEqual => false,
-            _ => Err(Error::BadFunctionCall)?,
+            _ => self.unsupported(&Value::Null, &Value::Null)?,
         })
     }
 
-    fn compare_bools(&self, l: &bool, r: &bool) -> Result<bool, Error> {
+    fn compare_bools(&self, l: &bool, r: &bool) -> Result<bool> {
         Ok(match self {
             Comparison::Equal => l == r,
             Comparison::NotEqual => l != r,
-            _ => Err(Error::BadFunctionCall)?,
+            _ => self.unsupported(&Value::Boolean(*l), &Value::Boolean(*r))?,
         })
     }
 
-    fn compare_strings(&self, l: &String, r: &String) -> Result<bool, Error> {
+    fn compare_strings(&self, l: &String, r: &String) -> Result<bool> {
         Ok(match self {
             Comparison::Equal => l == r,
             Comparison::NotEqual => l != r,
-            _ => Err(Error::BadFunctionCall)?,
+            _ => self.unsupported(&Value::String(l.clone()), &Value::String(r.clone()))?,
         })
     }
 
-    fn compare_numbers(&self, l: &f64, r: &f64) -> Result<bool, Error> {
+    fn compare_numbers(&self, l: &f64, r: &f64) -> Result<bool> {
         Ok(match self {
             Comparison::Equal => l == r,
             Comparison::NotEqual => l != r,
@@ -187,56 +196,53 @@ impl Comparison {
         })
     }
 
-    fn compare_arrays(&self, l: &Vec<Thunk>, r: &Vec<Thunk>) -> Result<bool, Error> {
-        if l.len() != r.len() {
-            return Ok(match self {
-                Comparison::Equal => false,
-                Comparison::NotEqual => true,
-                _ => Err(Error::BadFunctionCall)?,
-            });
+    fn compare_arrays(&self, l: &Vec<Thunk>, r: &Vec<Thunk>) -> Result<bool> {
+        if !matches!(self, Comparison::Equal | Comparison::NotEqual) {
+            self.unsupported(&Value::Array(l.clone()), &Value::Array(r.clone()))?;
         }
-        let mut arrays_equal = true;
-        for (left, right) in l.iter().zip(r.iter()) {
-            if !Comparison::Equal._compare(left, right)? {
-                arrays_equal = false;
-                break;
+
+        let arrays_equal = l.len() == r.len() && {
+            let mut equal = true;
+            for (left, right) in l.iter().zip(r.iter()) {
+                if !Comparison::Equal._compare(left, right)? {
+                    equal = false;
+                    break;
+                }
             }
-        }
+            equal
+        };
+
         Ok(match self {
             Comparison::Equal => arrays_equal,
             Comparison::NotEqual => !arrays_equal,
-            _ => Err(Error::BadFunctionCall)?,
+            _ => unreachable!(),
         })
     }
 
-    fn compare_objects(&self, l: &ScopePtr, r: &ScopePtr) -> Result<bool, Error> {
+    fn compare_objects(&self, l: &ScopePtr, r: &ScopePtr) -> Result<bool> {
+        if !matches!(self, Comparison::Equal | Comparison::NotEqual) {
+            self.unsupported(&Value::Object(l.clone()), &Value::Object(r.clone()))?;
+        }
+
         let lvalues = l.values();
         let rvalues = r.values();
-        if lvalues.len() != rvalues.len() {
-            return Ok(match self {
-                Comparison::Equal => false,
-                Comparison::NotEqual => true,
-                _ => Err(Error::BadFunctionCall)?,
-            });
-        }
-        if !lvalues.keys().eq(rvalues.keys()) {
-            return Ok(match self {
-                Comparison::Equal => false,
-                Comparison::NotEqual => true,
-                _ => Err(Error::BadFunctionCall)?,
-            });
-        }
-        let mut objects_equal = true;
-        for attr in lvalues.keys() {
-            if !Comparison::Equal._compare(&lvalues[attr], &rvalues[attr])? {
-                objects_equal = false;
-                break;
-            }
-        }
+
+        let objects_equal =
+            lvalues.len() == rvalues.len() && lvalues.keys().eq(rvalues.keys()) && {
+                let mut equal = true;
+                for attr in lvalues.keys() {
+                    if !Comparison::Equal._compare(&lvalues[attr], &rvalues[attr])? {
+                        equal = false;
+                        break;
+                    }
+                }
+                equal
+            };
+
         Ok(match self {
             Comparison::Equal => objects_equal,
             Comparison::NotEqual => !objects_equal,
-            _ => Err(Error::BadFunctionCall)?,
+            _ => unreachable!(),
         })
     }
 }

@@ -1,4 +1,4 @@
-use std::{collections::hash_map::Keys, rc::Rc};
+use std::{rc::Rc};
 
 use pyo3::{
     create_exception,
@@ -8,7 +8,7 @@ use pyo3::{
     wrap_pyfunction, FromPyObject, IntoPy, PyObject, PyResult, Python,
 };
 
-use crate::{thunk::Thunk, Error, Value};
+use crate::{Error, Value};
 
 create_exception!(conflag, ConflagError, PyException);
 

@@ -19,7 +19,7 @@ cp target/release/libconflag.so conflag.so
 ## Conflag language
 
 In `object.cfg`
-```json
+```
 {
     hello: (name) => "Hello, " + name,
     name: "Stef",

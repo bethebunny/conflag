@@ -34,6 +34,8 @@ Some other language features:
 - Import to break configs into multiple files
 - Patches, a new language feature
 
+See more examples of features in the tests directory (I recommend test_fib.cfg, test_cards.cfg, and test_patch.cfg as nice feature overviews).
+
 ## Rust serde usage
 
 ```rust
@@ -58,6 +60,6 @@ fn main() {
 "Stef"
 >>> s.message
 "Hello, Stef"
->>> data
+>>> s.data
 [2, 4, 6, 8, 10]
 ```

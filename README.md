@@ -1,7 +1,7 @@
 # 🔥🏁 conflag
 A functional and declarative configuration language. A superset of JSON with named references, scopes, functions, and other cool features. Bindings for python and Rust, with Rust Serde integration.
 
-![Auto-deploy](https://github.com/bethebunny/conflag/actions/workflows/ci_tests.yml/badge.svg)
+![Auto-deploy](https://github.com/bethebunny/conflag/actions/workflows/ci_tests.yaml/badge.svg)
 
 ## Getting started
 

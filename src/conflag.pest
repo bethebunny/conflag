@@ -33,7 +33,7 @@ lambda = { "(" ~ arg_list ~ ")" ~ "=>" ~ expression }
 arg_list = { (name ~ ",")* ~ (name ~ ","?)? }
 
 binops = { atom ~ (binop ~ atom)+ }
-binop = { "+" | "-" | "*" | "/" | ">" | "<" | ">=" | "<=" | "==" | "!=" }
+binop = { "+" | "-" | "*" | "/" | ">=" | ">" | "<=" | "<" | "==" | "!=" }
 
 name = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 

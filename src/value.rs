@@ -155,7 +155,7 @@ impl Value {
         _color: bool,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
-        let max_width = f.width().unwrap_or(80);
+        let max_width = f.width().unwrap_or(100);
         match self {
             Value::Number(n) => write!(f, "{n}"),
             Value::Boolean(b) => write!(f, "{b}"),

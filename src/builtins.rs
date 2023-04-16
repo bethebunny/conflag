@@ -139,13 +139,23 @@ fn builtin_reduce(args: &[Thunk]) -> Result<Thunk> {
     }
 }
 
+fn builtin_displayed(args: &[Thunk]) -> Result<Thunk> {
+    if let [v] = args {
+        println!("{}", v);
+        Ok(v.clone())
+    } else {
+        builtin_invalid_args("displayed(value)", args)
+    }
+}
+
 pub(crate) fn builtins() -> ScopePtr {
-    let builtins: [(&str, _BuiltinFn); 5] = [
-        ("if", builtin_if),
+    let builtins = [
+        ("if", builtin_if as _BuiltinFn),
         ("bool", builtin_bool),
         ("map", builtin_map),
         ("import", builtin_import),
         ("reduce", builtin_reduce),
+        ("displayed", builtin_displayed),
     ];
     let values =
         HashMap::from(builtins.map(|(name, f)| (name.into(), BuiltinFn(name.into(), f).into())));

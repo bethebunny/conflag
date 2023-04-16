@@ -6,10 +6,10 @@ Conflag is a data language. It's perfect for application configuration, once tho
 Example use cases for Conflag:
 - **Service deployment** -- eg. replacing json/yaml for Kubernetes or nginx configs
 - **Continuous integration** --  eg. replacing yaml for Github Actions
-- **ML experiments** -- eg. replacing code for repeatable and replicable experiment parameters)
+- **ML experiments** -- repeatable and replicable experiment parameters
 - **Developer tooling** -- eg. replacing JSON for VS Code or Sublime text configs
 
-Write your data declaratively, but with table-stakes like references, comments, and multiple files.
+Write your data declaratively, but with table-stakes features like references, comments, and multiple files.
 
 Any valid JSON file is already a valid Conflag file, so migration is easy, and the syntax is clear and easy to read. Get started in minutes and leave JSON behind.
 
@@ -92,7 +92,7 @@ It demonstrates a few features, such as
         }
     },
     
-    // Let's make a helper function to help us with the sweep.
+    // A helper function to help us with the sweep.
     // Like numpy's arange, create a list with a range of float values
     arange: (start, stop, step) => {
         // Name an internal computation in an anonymous scope
@@ -101,7 +101,7 @@ It demonstrates a few features, such as
         result: if(done, [], [start] + arange(start + step, stop, step)),
     }.result,
     
-    // Create a list that contains a copy of model_params for each value in our sweep
+    // A list that contains a copy of model_params for each value in our sweep
     experiments: map(
         // & is the patch operator, letting us override just the parts we want to change
         (_dropout) => model_params + {decoder_mlp: &{dropout: _dropout}},
@@ -109,6 +109,92 @@ It demonstrates a few features, such as
     ),
 
 // We don't need to expose any of the other junk to our program!
-// The data hides it in this anonymous scope and only produces the output.
+// The data hides it in this anonymous scope and only produces the output list.
 }.experiments
+```
+
+### The Patch operator
+
+The unary Patch operator `&` is a feature novel to Conflag. Its behavior is easier to
+explain with examples, but fundamentally it allows you to customize what happens *when
+a value is replaced in a scope*.
+
+For example,
+
+```js
+{a: 1} + {a: 2}
+```
+
+The value of this expression is `{a: 2}`, because the `a` in the second object
+*replaces* the value of `a` in the first object.
+
+With the patch operator, we can configure this behavior in a couple of ways.
+Syntactically, this looks like:
+```js
+{a: u} + {a: &v}
+```
+
+For instance, compare with and without the patch operator
+```js
+{
+  // has value {a: {b: "replace"}}
+  without_patch: {a: {b: "b", c: "c"}} +  {a: {b: "replace"}}
+
+  // has value {a: {b: "replace", c: "c"}}
+  with_patch:    {a: {b: "b", c: "c"}} + &{a: {b: "replace"}}
+}
+```
+
+The `+` operator gives a shallow dict union, and recursively it's simple to implement
+a full `deep_union(d1, d2)`; however, in configuration it's frequently the case that you
+want some mix of the two. Consider the case where you're overriding parameters for an ML
+model: you might want to, deep inside a config, change an entire layer to another layer
+type, or replace the optimizer with one with entirely different parameters. By placing
+(or not placing) the `&` operator, you have infinite flexible control over dict union
+operations.
+
+```js
+{
+    base_model: {
+        parameters: {layers: 6},
+        training: {
+            epochs: 10,
+            optimizer: {sgd: {lr: 1e-3, momentum: 1e-6}},
+        },
+    },
+    experiments: [
+      base_model,
+      base_model + {training: &{optimizer: &{sgd: &{lr: 2e-3}}}},
+      base_model + {training: &{optimizer: {adam: {lr: 1e-3, eps: 1e-7}}}},
+   ]
+}
+```
+
+You can also use patches with functions:
+```js
+base_model + {training: &{epochs: &(epochs) => 2 * epochs}}
+```
+
+The patch operator behaves in the following ways:
+- If `v` is a function, the result is `{a: v(u)}`
+- If `v` and `u` are both objects, the result is `{a: u + v}`
+- `{a: &u} + {a: &v}` is equivalent to `{a: &(u + &v)}`
+Additionally, `&` has a unique interaction with the `+` operator:
+- `u + &v` is equivalent to `({a: u} + {a: &v}).a`
+
+Serendipitously, this means that `+&` is equivalent to the `|>` pipeline operator some
+languages are adopting!
+
+```js
+{
+  point: (_x, _y) => {
+    x: _x,
+    y: _y,
+    math: import("math.cfg"),
+    magnitude: math.sqrt(x * x + y + y),
+  },
+  some_point: point(1, -1)
+    +& displayed
+    +& (p) => p.magnitude,
+}
 ```

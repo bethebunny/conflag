@@ -14,12 +14,11 @@ array = {
 
 expression = _{
     binops
-    | lambda
     | atom
     | "(" ~ expression ~ ")"
 }
 
-primitive = _{ object | array | string | number | boolean | null }
+primitive = _{ lambda | object | array | string | number | boolean | null }
 
 atom = { (patch_map | patch | primitive | name | "(" ~ expression ~ ")") ~ (atom_attribute | atom_function_call )* }
 atom_attribute = {"." ~ (name | string) }

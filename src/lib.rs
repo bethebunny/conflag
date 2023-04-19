@@ -16,6 +16,7 @@ mod value;
 use ast::{AstNode, Rule};
 use binop::BinOp;
 pub use builtins::BuiltinFn;
+use builtins::ImportContext;
 use scope::ScopePtr;
 use thunk::Thunk;
 pub use value::Value;
@@ -86,7 +87,7 @@ impl std::fmt::Display for Error {
 
 pub fn parse(contents: &str) -> Result<Rc<Value>> {
     let ast = AstNode::parse(contents)?;
-    Thunk::from(ast.value(&builtins::builtins())).evaluate()
+    Thunk::from(ast.value(&builtins::builtins(ImportContext::from_env()))).evaluate()
 }
 
 #[cfg(feature = "serde")]

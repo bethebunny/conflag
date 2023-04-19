@@ -1,5 +1,10 @@
 use core::fmt;
-use std::{collections::HashMap, fs, rc::Rc};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use crate::{ast::AstNode, scope::ScopePtr, thunk::Thunk, value::Value, Error, Result};
 
@@ -121,29 +126,6 @@ fn builtin_map(args: &[Thunk]) -> Result<Thunk> {
     }
 }
 
-fn builtin_import(args: &[Thunk]) -> Result<Thunk> {
-    if let [target] = args {
-        match &*target.evaluate()? {
-            Value::String(path) => {
-                let lib = crate::stdlib::modules();
-                if let Some(module) = lib.get(path) {
-                    return Ok(module.clone());
-                }
-                let contents =
-                    fs::read_to_string(path).map_err(|e| Error::ImportReadError(Rc::new(e)))?;
-                let node = AstNode::parse(contents.as_str())?;
-                Ok(node.value(&builtins()).into())
-            }
-            _ => Err(Error::TypeError(
-                "must import string path".into(),
-                target.clone(),
-            )),
-        }
-    } else {
-        builtin_invalid_args("import(path)", args)
-    }
-}
-
 fn builtin_reduce(args: &[Thunk]) -> Result<Thunk> {
     if let [f, array, state] = args {
         match &*array.evaluate()? {
@@ -177,29 +159,103 @@ fn builtin_displayed(args: &[Thunk]) -> Result<Thunk> {
     }
 }
 
-pub(crate) fn builtins() -> ScopePtr {
+#[derive(Clone, Debug)]
+pub(crate) struct ImportContext {
+    base_dir: PathBuf,
+    dir: PathBuf,
+}
+
+impl ImportContext {
+    pub(crate) fn from_env() -> Self {
+        Self::from_base(std::env::current_dir().unwrap())
+    }
+
+    pub(crate) fn from_base<P>(base_dir: P) -> Self
+    where
+        P: AsRef<Path>,
+    {
+        ImportContext {
+            base_dir: base_dir.as_ref().to_path_buf(),
+            dir: base_dir.as_ref().to_path_buf(),
+        }
+    }
+
+    fn with_dir<P>(&self, dir: P) -> Self
+    where
+        P: AsRef<Path>,
+    {
+        ImportContext {
+            base_dir: self.base_dir.clone(),
+            dir: dir.as_ref().to_path_buf(),
+        }
+    }
+
+    fn import<P>(&self, path: P) -> Result<Thunk>
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+        let lib = crate::stdlib::modules();
+        if let Some(module) = path.to_str().and_then(|p| lib.get(p)) {
+            return Ok(module.clone());
+        }
+        for dir in [&self.dir, &self.base_dir] {
+            let path = dir.join(path);
+            let contents =
+                fs::read_to_string(&path).map_err(|e| Error::ImportReadError(Rc::new(e)))?;
+            let node = AstNode::parse(contents.as_str())?;
+            // path.parent() will be none for a relative import with no directory,
+            // eg. "something.cfg", in which case we want to keep the same import directory context.
+            let ctx = match path.parent() {
+                Some(parent) => self.with_dir(parent),
+                None => self.clone(),
+            };
+            return Ok(node.value(&builtins(ctx)).into());
+        }
+        Err(Error::Custom(format!(
+            "Couldn't find a valid import for {path:?} given {self:?}"
+        )))
+    }
+
+    fn into_builtin(self) -> BuiltinFn {
+        BuiltinFn::from_1("import", "path", move |thunk: &Thunk| {
+            match &**thunk.evaluate().as_ref()? {
+                Value::String(path) => self.import(Path::new(path)),
+                _ => Err(Error::TypeError(
+                    "import path must be a string".into(),
+                    thunk.clone(),
+                )),
+            }
+        })
+    }
+}
+
+pub(crate) fn builtins(ctx: ImportContext) -> ScopePtr {
     let builtins = [
         ("if", builtin_if as fn(&[Thunk]) -> Result<Thunk>),
         ("bool", builtin_bool),
         ("map", builtin_map),
-        ("import", builtin_import),
         ("reduce", builtin_reduce),
         ("displayed", builtin_displayed),
     ];
-    let values = HashMap::from(
+    let mut values = HashMap::from(
         builtins.map(|(name, f)| (name.into(), BuiltinFn(name.into(), Rc::new(f)).into())),
     );
+    values.insert("import".into(), Value::BuiltinFn(ctx.into_builtin()).into());
     ScopePtr::from_values(values, None)
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    #[test]
+    fn test_import_native_stdlib() {
+        let imported = crate::parse(r#"import("math")"#).unwrap();
+        assert!(imported.attr("sqrt").is_ok());
+    }
 
     #[test]
-    fn test_import_stdlib() {
-        let args = vec![Value::String("math".into()).into()];
-        let imported = builtin_import(&args).unwrap().evaluate().unwrap();
-        assert!(imported.attr("sqrt").is_ok());
+    fn test_import_conflag_stdlib() {
+        let imported = crate::parse(r#"import("core")"#).unwrap();
+        assert!(imported.attr("and").is_ok());
     }
 }

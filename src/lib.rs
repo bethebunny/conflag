@@ -1,12 +1,15 @@
 #![feature(assert_matches)]
 #![feature(get_mut_unchecked)]
+#![feature(unboxed_closures)]
 
 use std::rc::Rc;
 
 mod ast;
 mod binop;
 mod builtins;
+mod module;
 mod scope;
+mod stdlib;
 mod thunk;
 mod value;
 
@@ -50,7 +53,7 @@ pub enum Error {
     NoSuchAttribute(ScopePtr, String),
     BadFunctionCall(String, Thunk),
     InvalidArguments(Thunk, Vec<Thunk>),
-    BuiltinInvalidArguments(&'static str, Vec<Thunk>),
+    BuiltinInvalidArguments(String, Vec<Thunk>),
     UnsupportedOperation(BinOp, Rc<Value>, Rc<Value>),
     BadEvaluationAccess,
     TypeError(String, Thunk),

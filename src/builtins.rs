@@ -3,7 +3,13 @@ use std::{collections::HashMap, fs, rc::Rc};
 
 use crate::{ast::AstNode, scope::ScopePtr, thunk::Thunk, value::Value, Error, Result};
 
-type _BuiltinFn = fn(&[Thunk]) -> Result<Thunk>;
+// TODO:
+// - rewrite builtins using from_N interface
+// - signatures / somehow docs in Display
+// - unified Display for native fns and lambdas
+// - name consistency: builtin vs native fn
+
+type _BuiltinFn = Rc<dyn Fn(&[Thunk]) -> Result<Thunk>>;
 
 #[derive(Clone)]
 pub struct BuiltinFn(pub String, pub _BuiltinFn);
@@ -20,8 +26,27 @@ impl fmt::Debug for BuiltinFn {
     }
 }
 
-fn builtin_invalid_args<K>(name: &'static str, args: &[Thunk]) -> Result<K> {
-    Err(Error::BuiltinInvalidArguments(name, args.to_vec()))
+impl BuiltinFn {
+    pub(crate) fn from_1<F>(name: &str, argnames: &str, f: F) -> Self
+    where
+        F: Fn(&Thunk) -> Result<Thunk> + 'static,
+    {
+        let signature = format!("{name}({argnames})");
+        BuiltinFn(
+            name.into(),
+            Rc::new(move |args: &[Thunk]| {
+                if let [v] = args {
+                    f(v)
+                } else {
+                    builtin_invalid_args(signature.as_str(), args)
+                }
+            }),
+        )
+    }
+}
+
+fn builtin_invalid_args<K>(name: &str, args: &[Thunk]) -> Result<K> {
+    Err(Error::BuiltinInvalidArguments(name.into(), args.to_vec()))
 }
 
 fn builtin_bool(args: &[Thunk]) -> Result<Thunk> {
@@ -100,6 +125,10 @@ fn builtin_import(args: &[Thunk]) -> Result<Thunk> {
     if let [target] = args {
         match &*target.evaluate()? {
             Value::String(path) => {
+                let lib = crate::stdlib::modules();
+                if let Some(module) = lib.get(path) {
+                    return Ok(module.clone());
+                }
                 let contents =
                     fs::read_to_string(path).map_err(|e| Error::ImportReadError(Rc::new(e)))?;
                 let node = AstNode::parse(contents.as_str())?;
@@ -150,14 +179,27 @@ fn builtin_displayed(args: &[Thunk]) -> Result<Thunk> {
 
 pub(crate) fn builtins() -> ScopePtr {
     let builtins = [
-        ("if", builtin_if as _BuiltinFn),
+        ("if", builtin_if as fn(&[Thunk]) -> Result<Thunk>),
         ("bool", builtin_bool),
         ("map", builtin_map),
         ("import", builtin_import),
         ("reduce", builtin_reduce),
         ("displayed", builtin_displayed),
     ];
-    let values =
-        HashMap::from(builtins.map(|(name, f)| (name.into(), BuiltinFn(name.into(), f).into())));
+    let values = HashMap::from(
+        builtins.map(|(name, f)| (name.into(), BuiltinFn(name.into(), Rc::new(f)).into())),
+    );
     ScopePtr::from_values(values, None)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_import_stdlib() {
+        let args = vec![Value::String("math".into()).into()];
+        let imported = builtin_import(&args).unwrap().evaluate().unwrap();
+        assert!(imported.attr("sqrt").is_ok());
+    }
 }

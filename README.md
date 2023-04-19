@@ -190,8 +190,7 @@ languages are adopting!
   point: (_x, _y) => {
     x: _x,
     y: _y,
-    math: import("math.cfg"),
-    magnitude: math.sqrt(x * x + y + y),
+    magnitude: import("math").sqrt(x * x + y * y),
   },
   some_point: point(1, -1)
     +& displayed

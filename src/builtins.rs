@@ -202,15 +202,20 @@ impl ImportContext {
         for dir in [&self.dir, &self.base_dir] {
             let path = dir.join(path);
             let contents =
-                fs::read_to_string(&path).map_err(|e| Error::ImportReadError(Rc::new(e)))?;
-            let node = AstNode::parse(contents.as_str())?;
-            // path.parent() will be none for a relative import with no directory,
-            // eg. "something.cfg", in which case we want to keep the same import directory context.
-            let ctx = match path.parent() {
-                Some(parent) => self.with_dir(parent),
-                None => self.clone(),
-            };
-            return Ok(node.value(&builtins(ctx)).into());
+                fs::read_to_string(&path).map_err(|e| Error::ImportReadError(Rc::new(e)));
+            match contents {
+                Ok(contents) => {
+                    let node = AstNode::parse(contents.as_str())?;
+                    // path.parent() will be none for a relative import with no directory,
+                    // eg. "something.cfg", in which case we want to keep the same import directory context.
+                    let ctx = match path.parent() {
+                        Some(parent) => self.with_dir(parent),
+                        None => self.clone(),
+                    };
+                    return Ok(node.value(&builtins(ctx)).into());
+                },
+                Err(_) => continue,
+            }
         }
         Err(Error::Custom(format!(
             "Couldn't find a valid import for {path:?} given {self:?}"

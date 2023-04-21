@@ -7,7 +7,6 @@ use std::rc::Rc;
 mod ast;
 mod binop;
 mod builtins;
-mod module;
 mod scope;
 mod stdlib;
 mod thunk;

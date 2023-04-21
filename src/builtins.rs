@@ -213,7 +213,7 @@ impl ImportContext {
                         None => self.clone(),
                     };
                     return Ok(node.value(&builtins(ctx)).into());
-                },
+                }
                 Err(_) => continue,
             }
         }
